@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>SmartSchedule AI</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f4f7fb;color:#1f2937}
+header{background:linear-gradient(135deg,#0f172a,#1e3a8a);color:white;padding:42px 22px;text-align:center}
+header h1{margin:0;font-size:44px}
+header p{max-width:900px;margin:14px auto 0;color:#dbeafe;line-height:1.5}
+nav{background:#111827;padding:12px;text-align:center;position:sticky;top:0;z-index:10}
+nav a{color:white;text-decoration:none;margin:0 10px;font-size:14px;font-weight:bold}
+section{max-width:1200px;margin:24px auto;padding:0 18px}
+.card{background:white;border:1px solid #dbe4f0;border-radius:18px;padding:24px;margin-bottom:22px;box-shadow:0 8px 22px rgba(15,23,42,.07)}
+h2{margin-top:0;color:#0f172a;font-size:27px}
+h3{color:#1e3a8a;margin-bottom:8px}
+.grid{display:grid;gap:18px}.grid-2{grid-template-columns:repeat(2,1fr)}.grid-3{grid-template-columns:repeat(3,1fr)}.grid-4{grid-template-columns:repeat(4,1fr)}
+.stat{background:#eff6ff;border:1px solid #bfdbfe;border-radius:14px;padding:16px;text-align:center}
+.stat strong{font-size:30px;color:#1d4ed8;display:block}
+.note{background:#fff7ed;border-left:6px solid #f97316;padding:14px;border-radius:10px;line-height:1.5;margin:12px 0}
+.success{background:#ecfdf5;border-left:6px solid #10b981;padding:14px;border-radius:10px;line-height:1.5;margin:12px 0}
+.warning{background:#fef2f2;border-left:6px solid #ef4444;padding:14px;border-radius:10px;line-height:1.5;margin:12px 0}
+label{display:block;font-weight:bold;margin-top:12px;margin-bottom:5px}
+input,select,textarea{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:10px;font-size:14px;background:white}
+textarea{min-height:170px;font-family:Consolas,monospace;white-space:pre-wrap}
+button{background:#1d4ed8;color:white;border:0;border-radius:12px;padding:11px 16px;margin:8px 6px 8px 0;font-weight:bold;cursor:pointer;font-size:14px}
+button:hover{background:#1e40af}button.secondary{background:#334155}
+table{width:100%;border-collapse:collapse;margin-top:12px;font-size:14px}
+th,td{border:1px solid #d1d5db;padding:9px;text-align:left;vertical-align:top}
+th{background:#e0ecff;color:#0f172a}
+.schedule-card{border:1px solid #dbe4f0;border-radius:14px;overflow:hidden;margin-top:18px;background:white}
+.schedule-title{background:#0f172a;color:white;padding:12px;font-weight:bold}
+.small{font-size:13px;color:#475569;line-height:1.45}
+.pill{display:inline-block;background:#dbeafe;color:#1e3a8a;padding:5px 9px;margin:3px;border-radius:999px;font-size:12px;font-weight:bold}
+.rank-good{color:#15803d;font-weight:bold}.rank-low{color:#b45309;font-weight:bold}
+.lunch-row{background:#fef3c7;font-weight:bold;color:#92400e}
+footer{text-align:center;padding:30px;color:#64748b;font-size:13px}
+@media(max-width:900px){.grid-2,.grid-3,.grid-4{grid-template-columns:1fr}header h1{font-size:34px}nav a{display:inline-block;margin:6px}}
+</style>
+</head>
+
+<body>
+<header>
+<h1>SmartSchedule AI</h1>
+<p>A custom student scheduling system for OGA course requests. It places Math, ELA, History, and Science first, then PE if required, then ranked electives around the required schedule.</p>
+</header>
+
+<nav>
+<a href="#overview">Overview</a>
+<a href="#settings">Master Schedule</a>
+<a href="#courses">Courses</a>
+<a href="#demo">Demo</a>
+<a href="#import">Import</a>
+<a href="#editor">Manual Override</a>
+<a href="#results">Results</a>
+</nav>
+
+<section id="overview">
+<div class="card">
+<h2>Scheduling Problem</h2>
+<p>SmartSchedule AI builds student schedules using core classes, PE waiver status, ranked course requests, teacher availability, seat limits, lunch timing, and special student exceptions.</p>
+<div class="grid grid-4">
+<div class="stat"><strong>4</strong>Core Classes</div>
+<div class="stat"><strong>PE</strong>Unless Waived</div>
+<div class="stat"><strong>2-3</strong>Electives</div>
+<div class="stat"><strong>7</strong>Total Periods</div>
+</div>
+<div class="note"><strong>Rule:</strong> A normal student receives 4 core classes, PE, and 2 electives. A student with a PE waiver receives 4 core classes and 3 electives.</div>
+</div>
+</section>
+
+<section id="settings">
+<div class="card">
+<h2>Master Schedule Settings</h2>
+<div class="grid grid-3">
+<div>
+<h3>6th Grade Teachers</h3>
+<label>6th Math</label><input id="g6Math" value="Mrs. Waters">
+<label>6th ELA</label><input id="g6ELA" value="Ms. Kendall">
+<label>6th History</label><input id="g6History" value="Mrs. Patel">
+<label>6th Science</label><input id="g6Science" value="Mr. Emerson">
+<label>6th PE</label><input id="g6PE" value="Coach Ramirez">
+</div>
+<div>
+<h3>7th Grade Teachers</h3>
+<label>7th Math</label><input id="g7Math" value="Mr. Johnson">
+<label>7th ELA</label><input id="g7ELA" value="Mrs. Langford">
+<label>7th History</label><input id="g7History" value="Mr. Holloway">
+<label>7th Science</label><input id="g7Science" value="Dr. Bennett">
+<label>7th PE</label><input id="g7PE" value="Coach Whitaker">
+</div>
+<div>
+<h3>8th Grade Teachers</h3>
+<label>8th Math</label><input id="g8Math" value="Ms. Rivera">
+<label>8th ELA</label><input id="g8ELA" value="Mr. Carlisle">
+<label>8th History</label><input id="g8History" value="Mr. Brooks">
+<label>8th Science</label><input id="g8Science" value="Mrs. Donovan">
+<label>8th PE</label><input id="g8PE" value="Coach Morgan">
+</div>
+</div>
+<div class="success">
+<strong>School Rules:</strong> 6th grade lunch is after Period 4. 7th and 8th grade lunch is after Period 5. PE is required unless waived.
+</div>
+</div>
+</section>
+
+<section id="courses">
+<div class="card">
+<h2>OGA Course Request Choices</h2>
+<div id="courseList"></div>
+</div>
+</section>
+
+<section id="demo">
+<div class="card">
+<h2>Generate 10 Demo Students</h2>
+<button onclick="runDemo()">Generate 10 Student Schedules</button>
+<button class="secondary" onclick="clearResults()">Clear Results</button>
+</div>
+</section>
+
+<section id="import">
+<div class="card">
+<h2>School-Wide Import Mode</h2>
+<div class="note"><strong>Format:</strong><br>Name, Grade, PE Waiver, Choice 1, Choice 2, Choice 3, Choice 4, Choice 5</div>
+<textarea id="bulkInput">Name,Grade,PE Waiver,Choice 1,Choice 2,Choice 3,Choice 4,Choice 5
+Student A,6,No,"M/J 2-D Studio Art 1","Info & Comm Tech 1","M/J Creative Writing 1","M/J Theatre 1","Spanish 1"
+Student B,7,No,"FIRST Lego League Robotics 1","Digital Information Technology","App Creators/Automation & Robotics","Quiz Bowl 1","Japanese 1"
+Student C,8,Yes,"M/J Speech-Debate 1","M/J Creative Photography 1","French 1","M/J Intro to Personal Financial Literacy","Chess 1"</textarea>
+<button onclick="runBulkImport()">Generate Imported Schedules</button>
+</div>
+</section>
+
+<section id="editor">
+<div class="card">
+<h2>Manual Schedule Override</h2>
+<p>This is for outlier students. It changes the assigned schedule, not the student’s original requests. It prevents duplicate subjects, but allows cross-grade placement when needed.</p>
+
+<label>Select Student</label>
+<select id="studentSelect" onchange="loadScheduleEditor()">
+<option>No students loaded yet</option>
+</select>
+
+<div class="grid grid-2">
+<div>
+<label>Period 1</label><select id="period1"></select>
+<label>Period 2</label><select id="period2"></select>
+<label>Period 3</label><select id="period3"></select>
+<label>Period 4</label><select id="period4"></select>
+</div>
+<div>
+<label>Period 5</label><select id="period5"></select>
+<label>Period 6</label><select id="period6"></select>
+<label>Period 7</label><select id="period7"></select>
+</div>
+</div>
+
+<button onclick="saveScheduleOverride()">Save Manual Schedule Override</button>
+<div id="editMessage" class="small"></div>
+</div>
+</section>
+
+<section id="results">
+<div class="card">
+<h2>Schedule Results</h2>
+<div id="summaryOutput" class="small">No schedules generated yet.</div>
+<div id="resultsOutput"></div>
+</div>
+</section>
+
+<footer>SmartSchedule AI | OGA Student Scheduling System</footer>
+
+<script>
+const academicCompetitionCourses=[
+"Odyssey of the Mind 1",
+"Odyssey of the Mind 2",
+"Odyssey of the Mind 3",
+"FIRST Lego League Robotics 1",
+"FIRST Lego League Robotics 2",
+"FIRST Lego League Robotics 3",
+"Science Olympiad 1",
+"Science Olympiad 2",
+"Science Olympiad 3",
+"Chess 1",
+"Chess 2",
+"Chess 3",
+"Quiz Bowl 1",
+"Quiz Bowl 2",
+"Quiz Bowl 3",
+"Advanced Academics, Future Business Leaders of America 2",
+"Advanced Academics, Future Business Leaders of America 3",
+"M/J Speech-Debate 1",
+"M/J Speech-Debate 2",
+"M/J Speech-Debate 3"
+];
+
+const electiveCourses=[
+"M/J 2-D Studio Art 1",
+"M/J 2-D Studio Art 2",
+"M/J Creative Photography 1",
+"M/J Instrumental Ensemble",
+"M/J Chorus 1",
+"M/J Chorus 2",
+"M/J Chorus 3",
+"M/J Theatre 1",
+"M/J Creative Writing 1",
+"M/J Creative Writing 2",
+"M/J Creative Writing 3",
+"Fundamentals of Visual & Perf Arts",
+"Info & Comm Tech 1",
+"Info & Comm Tech 2",
+"Digital Information Technology",
+"App Creators/Automation & Robotics",
+"French 1",
+"French 2",
+"Spanish 1",
+"Spanish 2",
+"Japanese 1",
+"Advanced Academics, Future Business Leaders of America 1",
+"M/J Intro to Personal Financial Literacy"
+];
+
+const allRequestCourses=academicCompetitionCourses.concat(electiveCourses);
+
+const courseTeachers={
+"Odyssey of the Mind 1":"Ms. Aldridge","Odyssey of the Mind 2":"Ms. Aldridge","Odyssey of the Mind 3":"Ms. Aldridge",
+"FIRST Lego League Robotics 1":"Mr. Tanaka","FIRST Lego League Robotics 2":"Mr. Tanaka","FIRST Lego League Robotics 3":"Mr. Tanaka",
+"Science Olympiad 1":"Mrs. Whitfield","Science Olympiad 2":"Mrs. Whitfield","Science Olympiad 3":"Mrs. Whitfield",
+"Chess 1":"Mr. Stein","Chess 2":"Mr. Stein","Chess 3":"Mr. Stein",
+"Quiz Bowl 1":"Dr. Mercer","Quiz Bowl 2":"Dr. Mercer","Quiz Bowl 3":"Dr. Mercer",
+"Advanced Academics, Future Business Leaders of America 1":"Ms. Caldwell",
+"Advanced Academics, Future Business Leaders of America 2":"Ms. Caldwell",
+"Advanced Academics, Future Business Leaders of America 3":"Ms. Caldwell",
+"M/J Speech-Debate 1":"Mrs. Sinclair","M/J Speech-Debate 2":"Mrs. Sinclair","M/J Speech-Debate 3":"Mrs. Sinclair",
+"M/J 2-D Studio Art 1":"Ms. Marquez","M/J 2-D Studio Art 2":"Ms. Marquez",
+"M/J Creative Photography 1":"Mr. Ellison",
+"M/J Instrumental Ensemble":"Mr. Navarro",
+"M/J Chorus 1":"Mrs. Bellamy","M/J Chorus 2":"Mrs. Bellamy","M/J Chorus 3":"Mrs. Bellamy",
+"M/J Theatre 1":"Ms. Harrington",
+"M/J Creative Writing 1":"Mr. Fletcher","M/J Creative Writing 2":"Mr. Fletcher","M/J Creative Writing 3":"Mr. Fletcher",
+"Fundamentals of Visual & Perf Arts":"Mrs. Sato",
+"Info & Comm Tech 1":"Ms. Nguyen","Info & Comm Tech 2":"Ms. Nguyen",
+"Digital Information Technology":"Mr. Carver",
+"App Creators/Automation & Robotics":"Mrs. Lennox",
+"French 1":"Madame Laurent","French 2":"Madame Laurent",
+"Spanish 1":"Señora Cruz","Spanish 2":"Señora Cruz",
+"Japanese 1":"Mr. Yamamoto",
+"M/J Intro to Personal Financial Literacy":"Mr. Grayson"
+};
+
+const fakeNames=["Ava Brooks","Liam Carter","Sophia Lane","Noah Bennett","Mia Collins","Ethan Parker","Olivia Stone","Lucas Reed","Emma Wilson","Mason Gray"];
+let currentStudents=[];
+let currentResults=[];
+
+function displayCourseList(){
+let html="<div class='grid grid-2'><div><h3>Academic Competition Options</h3><ul>";
+academicCompetitionCourses.forEach(c=>html+="<li>"+c+"</li>");
+html+="</ul></div><div><h3>Elective Options</h3><ul>";
+electiveCourses.forEach(c=>html+="<li>"+c+"</li>");
+html+="</ul></div></div>";
+html+="<div class='note'><strong>Level Rule:</strong> Courses with 1, 2, and 3 are separate levels. Students should normally take them in order: 1, then 2, then 3.</div>";
+document.getElementById("courseList").innerHTML=html;
+}
+
+function getCoreTeacher(grade,subject){
+return document.getElementById("g"+grade+subject).value;
+}
+
+function gradePriority(g){
+if(g===8)return 1;
+if(g===7)return 2;
+if(g===6)return 3;
+return 4;
+}
+
+function getLunchAfterPeriod(g){
+return g===6?4:5;
+}
+
+function createEmptySchedule(){
+let s={};
+for(let i=1;i<=7;i++)s[i]=null;
+return s;
+}
+
+function normalizeText(text){
+return String(text||"").toLowerCase().replace(/m\/j/g,"mj").replace(/&/g,"and").replace(/[^a-z0-9 ]/g," ").replace(/\s+/g," ").trim();
+}
+
+function matchCourse(input){
+const raw=String(input||"").trim();
+const clean=normalizeText(raw);
+if(!clean)return "";
+for(let c of allRequestCourses){if(normalizeText(c)===clean)return c;}
+for(let c of allRequestCourses){if(normalizeText(c).includes(clean)||clean.includes(normalizeText(c).slice(0,12)))return c;}
+return raw;
+}
+
+function getMasterSections(){
+let sections={};
+
+[6,7,8].forEach(g=>{
+let corePeriods=[1,2,3,4].sort(()=>Math.random()-.5);
+sections[g+" Math"]=[{period:corePeriods[0],teacher:getCoreTeacher(g,"Math"),seats:30}];
+sections[g+" ELA"]=[{period:corePeriods[1],teacher:getCoreTeacher(g,"ELA"),seats:30}];
+sections[g+" History"]=[{period:corePeriods[2],teacher:getCoreTeacher(g,"History"),seats:30}];
+sections[g+" Science"]=[{period:corePeriods[3],teacher:getCoreTeacher(g,"Science"),seats:30}];
+
+let pePeriods=g===6?[5,6,7]:[1,6,7];
+sections[g+" PE"]=[
+{period:pePeriods[0],teacher:getCoreTeacher(g,"PE"),seats:40},
+{period:pePeriods[1],teacher:getCoreTeacher(g,"PE"),seats:40},
+{period:pePeriods[2],teacher:getCoreTeacher(g,"PE"),seats:40}
+];
+});
+
+allRequestCourses.forEach((course,index)=>{
+let periodSets=[[5,6,7],[6,7,5],[5,7,6],[1,6,7],[2,5,7]];
+let set=periodSets[index%periodSets.length];
+sections[course]=[
+{period:set[0],teacher:courseTeachers[course],seats:3},
+{period:set[1],teacher:courseTeachers[course],seats:3},
+{period:set[2],teacher:courseTeachers[course],seats:3}
+];
+});
+
+return sections;
+}
+
+function deepCopy(obj){return JSON.parse(JSON.stringify(obj));}
+
+function requiredCoursesForGrade(s){
+let r=[s.grade+" Math",s.grade+" ELA",s.grade+" History",s.grade+" Science"];
+if(!s.peWaiver)r.push(s.grade+" PE");
+return r;
+}
+
+function placeClass(schedule,sections,courseName){
+if(!sections[courseName])return{placed:false};
+let possible=sections[courseName].filter(x=>x.seats>0&&schedule[x.period]===null);
+possible.sort((a,b)=>b.seats-a.seats||a.period-b.period);
+if(possible.length===0)return{placed:false};
+let chosen=possible[0];
+schedule[chosen.period]={course:courseName,teacher:chosen.teacher};
+chosen.seats--;
+return{placed:true};
+}
+
+function fillMissingElective(schedule,student,sections,received,missed){
+for(let course of allRequestCourses){
+let result=placeClass(schedule,sections,course);
+if(result.placed){
+received.push({course:course,rank:"Backup"});
+return;
+}
+}
+}
+
+function buildStudentSchedule(student,sections){
+let schedule=createEmptySchedule();
+let notes=[],received=[],missed=[];
+
+requiredCoursesForGrade(student).forEach(course=>{
+let r=placeClass(schedule,sections,course);
+if(!r.placed)notes.push("Could not place required course: "+course);
+});
+
+let electiveTarget=student.peWaiver?3:2;
+
+student.rankings.forEach((course,index)=>{
+if(received.length>=electiveTarget)return;
+let matched=matchCourse(course);
+if(!matched)return;
+let r=placeClass(schedule,sections,matched);
+if(r.placed)received.push({course:matched,rank:index+1});
+else missed.push({course:matched,rank:index+1});
+});
+
+while(received.length<electiveTarget){
+fillMissingElective(schedule,student,sections,received,missed);
+if(received.length>=electiveTarget)break;
+else break;
+}
+
+return{student,schedule,notes,receivedElectives:received,missedElectives:missed,manual:false};
+}
+
+function generateRankings(){
+return [...allRequestCourses].sort(()=>Math.random()-.5).slice(0,5);
+}
+
+function createDemoStudents(){
+let students=[];
+for(let i=0;i<8;i++){
+let grades=[6,7,8];
+students.push({name:fakeNames[i],grade:grades[i%3],peWaiver:i===4,rankings:generateRankings()});
+}
+students.push({
+name:"Preference Example A",grade:6,peWaiver:false,
+rankings:["M/J 2-D Studio Art 1","Spanish 1","M/J Chorus 1","M/J Theatre 1","M/J Creative Writing 1"]
+});
+students.push({
+name:"Preference Example B",grade:8,peWaiver:false,
+rankings:["Spanish 1","M/J Chorus 1","M/J Theatre 1","M/J Creative Writing 1","M/J 2-D Studio Art 1"]
+});
+return students;
+}
+
+function generateSchedules(students){
+let sections=deepCopy(getMasterSections());
+let sorted=[...students].sort((a,b)=>gradePriority(a.grade)-gradePriority(b.grade));
+return sorted.map(s=>buildStudentSchedule(s,sections));
+}
+
+function runDemo(){
+currentStudents=createDemoStudents();
+currentResults=generateSchedules(currentStudents);
+displayResults(currentResults,"10 Demo Students");
+refreshStudentSelect();
+}
+
+function parseWaiver(v){
+let c=normalizeText(v);
+return c==="yes"||c==="y"||c==="waiver"||c==="signed";
+}
+
+function splitCsvLine(line){
+let result=[],current="",inQuotes=false;
+for(let i=0;i<line.length;i++){
+let char=line[i];
+if(char==='"')inQuotes=!inQuotes;
+else if(char===","&&!inQuotes){result.push(current.trim());current="";}
+else current+=char;
+}
+result.push(current.trim());
+return result;
+}
+
+function runBulkImport(){
+let text=document.getElementById("bulkInput").value.trim();
+let lines=text.split("\n").map(x=>x.trim()).filter(Boolean);
+if(lines.length<2){alert("Please include a header row and at least one student row.");return;}
+let students=[];
+for(let i=1;i<lines.length;i++){
+let p=splitCsvLine(lines[i]);
+if(p.length<4)continue;
+students.push({
+name:p[0],
+grade:Number(String(p[1]).replace(/[^0-9]/g,"")),
+peWaiver:parseWaiver(p[2]),
+rankings:p.slice(3,8).map(matchCourse)
+});
+}
+currentStudents=students;
+currentResults=generateSchedules(currentStudents);
+displayResults(currentResults,"Imported Student Data");
+refreshStudentSelect();
+}
+
+function allScheduleOptions(){
+let options=[];
+[6,7,8].forEach(g=>{
+options.push(g+" Math",g+" ELA",g+" History",g+" Science",g+" PE");
+});
+return options.concat(allRequestCourses);
+}
+
+function fillScheduleEditorDropdowns(){
+for(let p=1;p<=7;p++){
+let sel=document.getElementById("period"+p);
+sel.innerHTML="";
+allScheduleOptions().forEach(c=>{
+let opt=document.createElement("option");
+opt.value=c;
+opt.textContent=c;
+sel.appendChild(opt);
+});
+}
+}
+
+function refreshStudentSelect(){
+let sel=document.getElementById("studentSelect");
+sel.innerHTML="";
+if(currentResults.length===0){
+let opt=document.createElement("option");
+opt.textContent="No students loaded yet";
+sel.appendChild(opt);
+return;
+}
+currentResults.forEach((r,i)=>{
+let opt=document.createElement("option");
+opt.value=i;
+opt.textContent=r.student.name+" - Rising Grade "+r.student.grade;
+sel.appendChild(opt);
+});
+loadScheduleEditor();
+}
+
+function loadScheduleEditor(){
+if(currentResults.length===0)return;
+fillScheduleEditorDropdowns();
+let i=Number(document.getElementById("studentSelect").value);
+let result=currentResults[i];
+for(let p=1;p<=7;p++){
+document.getElementById("period"+p).value=result.schedule[p].course;
+}
+}
+
+function subjectFamily(course){
+if(course.includes("Math"))return "Math";
+if(course.includes("ELA"))return "ELA";
+if(course.includes("History"))return "History";
+if(course.includes("Science") && !course.includes("Science Olympiad"))return "Science";
+if(course.includes("PE"))return "PE";
+return course.replace(/ 1$| 2$| 3$/,"");
+}
+
+function validateManualSchedule(courses){
+let families={};
+for(let c of courses){
+let fam=subjectFamily(c);
+if(families[fam]){
+return "Duplicate schedule problem: " + c + " repeats the same subject/course family as another period.";
+}
+families[fam]=true;
+}
+return "";
+}
+
+function teacherForCourse(course){
+for(let g of [6,7,8]){
+if(course===g+" Math")return getCoreTeacher(g,"Math");
+if(course===g+" ELA")return getCoreTeacher(g,"ELA");
+if(course===g+" History")return getCoreTeacher(g,"History");
+if(course===g+" Science")return getCoreTeacher(g,"Science");
+if(course===g+" PE")return getCoreTeacher(g,"PE");
+}
+return courseTeachers[course]||"Assigned Teacher";
+}
+
+function saveScheduleOverride(){
+if(currentResults.length===0)return;
+let i=Number(document.getElementById("studentSelect").value);
+let result=currentResults[i];
+
+let courses=[];
+for(let p=1;p<=7;p++)courses.push(document.getElementById("period"+p).value);
+
+let error=validateManualSchedule(courses);
+if(error){
+document.getElementById("editMessage").innerHTML="<div class='warning'><strong>Cannot save:</strong> "+error+"</div>";
+return;
+}
+
+for(let p=1;p<=7;p++){
+let course=courses[p-1];
+result.schedule[p]={course:course,teacher:teacherForCourse(course)};
+}
+
+result.manual=true;
+displayResults(currentResults,"Manual Schedule Override Saved");
+refreshStudentSelect();
+document.getElementById("editMessage").innerHTML="<div class='success'>Manual override saved. Cross-grade placement is allowed, but duplicate subjects are blocked.</div>";
+}
+
+function displayResults(results,modeName){
+let total=results.length,firstChoice=0,anyElective=0,manualCount=0;
+results.forEach(r=>{
+if(r.manual)manualCount++;
+if(r.receivedElectives.some(e=>e.rank===1))firstChoice++;
+if(r.receivedElectives.length>0)anyElective++;
+});
+document.getElementById("summaryOutput").innerHTML=`
+<div class="grid grid-4">
+<div class="stat"><strong>${total}</strong>Students Scheduled</div>
+<div class="stat"><strong>${firstChoice}</strong>Received 1st Choice</div>
+<div class="stat"><strong>${anyElective}</strong>Received Requested Course</div>
+<div class="stat"><strong>${manualCount}</strong>Manual Overrides</div>
+</div>
+<div class="success"><strong>${modeName}:</strong> Core classes were placed first, then PE if required, then electives.</div>`;
+let html="";
+results.forEach(r=>html+=createScheduleHtml(r));
+document.getElementById("resultsOutput").innerHTML=html;
+document.getElementById("results").scrollIntoView({behavior:"smooth"});
+}
+
+function createScheduleHtml(result){
+let s=result.student,lunchAfter=getLunchAfterPeriod(s.grade);
+let rankingHtml="";
+s.rankings.forEach((course,i)=>{if(course)rankingHtml+=`<span class="pill">#${i+1}: ${course}</span>`});
+let rows="";
+for(let p=1;p<=7;p++){
+let item=result.schedule[p];
+rows+=`<tr><td>Period ${p}</td><td>${item.course}</td><td>${item.teacher}</td></tr>`;
+if(p===lunchAfter)rows+=`<tr class="lunch-row"><td colspan="3">Lunch Break After Period ${lunchAfter}</td></tr>`;
+}
+let received=result.receivedElectives.length?result.receivedElectives.map(e=>`<span class="${e.rank<=2||e.rank==="Backup"?"rank-good":"rank-low"}">${e.course} (#${e.rank})</span>`).join(", "):"No requested courses placed";
+let missed=result.missedElectives.length?result.missedElectives.map(e=>`${e.course} (#${e.rank})`).join(", "):"None";
+let manual=result.manual?`<div class="note"><strong>Manual Override:</strong> This student's assigned schedule was manually adjusted.</div>`:"";
+return `<div class="schedule-card">
+<div class="schedule-title">${s.name} | Rising Grade ${s.grade}${s.peWaiver?" | PE Waiver Recorded":""}${result.manual?" | Manually Edited":""}</div>
+<div style="padding:14px;">
+<div class="small"><strong>Original Ranked Requests:</strong><br>${rankingHtml}</div>
+<table><tr><th>Time</th><th>Assigned Class</th><th>Teacher</th></tr>${rows}</table>
+<p class="small"><strong>Requested Courses Received:</strong> ${received}<br><strong>Requested Courses Not Placed:</strong> ${missed}</p>
+${manual}
+</div></div>`;
+}
+
+function clearResults(){
+currentStudents=[];
+currentResults=[];
+document.getElementById("summaryOutput").innerHTML="No schedules generated yet.";
+document.getElementById("resultsOutput").innerHTML="";
+refreshStudentSelect();
+}
+
+displayCourseList();
+refreshStudentSelect();
+</script>
+</body>
+</html>
