@@ -100,7 +100,7 @@ footer{text-align:center;padding:30px;color:#64748b;font-size:13px}
 </div>
 </div>
 <div class="success">
-<strong>School Rules:</strong> 6th grade lunch is after Period 4. 7th and 8th grade lunch is after Period 5. PE is required unless waived.
+<strong>School Rules:</strong> 6th grade lunch is after Period 4. 7th and 8th grade lunch is after Period 5. PE is required unless waived. Each core class and PE has two teachers, so two sections can meet in the same period. The name you type is the first teacher.
 </div>
 </div>
 </section>
@@ -123,19 +123,20 @@ footer{text-align:center;padding:30px;color:#64748b;font-size:13px}
 <section id="import">
 <div class="card">
 <h2>School-Wide Import Mode</h2>
-<div class="note"><strong>Format:</strong><br>Name, Grade, PE Waiver, Choice 1, Choice 2, Choice 3, Choice 4, Choice 5</div>
+<div class="note"><strong>Format:</strong><br>Name, Grade, PE Waiver, Choice 1, Choice 2, Choice 3, Choice 4, Choice 5<br>Use the full course name from the list above. Grades must be 6, 7, or 8. Problems are listed under the button. Nothing is guessed.</div>
 <textarea id="bulkInput">Name,Grade,PE Waiver,Choice 1,Choice 2,Choice 3,Choice 4,Choice 5
 Student A,6,No,"M/J 2-D Studio Art 1","Info & Comm Tech 1","M/J Creative Writing 1","M/J Theatre 1","Spanish 1"
 Student B,7,No,"FIRST Lego League Robotics 1","Digital Information Technology","App Creators/Automation & Robotics","Quiz Bowl 1","Japanese 1"
 Student C,8,Yes,"M/J Speech-Debate 1","M/J Creative Photography 1","French 1","M/J Intro to Personal Financial Literacy","Chess 1"</textarea>
 <button onclick="runBulkImport()">Generate Imported Schedules</button>
+<div id="importMessage"></div>
 </div>
 </section>
 
 <section id="editor">
 <div class="card">
 <h2>Manual Schedule Override</h2>
-<p>This is for outlier students. It changes the assigned schedule, not the student’s original requests. It prevents duplicate subjects, but allows cross-grade placement when needed.</p>
+<p>This is for outlier students. It changes the assigned schedule, not the student’s original requests. It blocks duplicate subjects, removing a required class, and classes that are already full. Cross-grade placement is still allowed, and seat counts update when a change is saved.</p>
 
 <label>Select Student</label>
 <select id="studentSelect" onchange="loadScheduleEditor()">
@@ -171,449 +172,166 @@ Student C,8,Yes,"M/J Speech-Debate 1","M/J Creative Photography 1","French 1","M
 
 <footer>SmartSchedule AI | OGA Student Scheduling System</footer>
 
+<script src="scheduler.js"></script>
 <script>
-const academicCompetitionCourses=[
-"Odyssey of the Mind 1",
-"Odyssey of the Mind 2",
-"Odyssey of the Mind 3",
-"FIRST Lego League Robotics 1",
-"FIRST Lego League Robotics 2",
-"FIRST Lego League Robotics 3",
-"Science Olympiad 1",
-"Science Olympiad 2",
-"Science Olympiad 3",
-"Chess 1",
-"Chess 2",
-"Chess 3",
-"Quiz Bowl 1",
-"Quiz Bowl 2",
-"Quiz Bowl 3",
-"Advanced Academics, Future Business Leaders of America 2",
-"Advanced Academics, Future Business Leaders of America 3",
-"M/J Speech-Debate 1",
-"M/J Speech-Debate 2",
-"M/J Speech-Debate 3"
-];
-
-const electiveCourses=[
-"M/J 2-D Studio Art 1",
-"M/J 2-D Studio Art 2",
-"M/J Creative Photography 1",
-"M/J Instrumental Ensemble",
-"M/J Chorus 1",
-"M/J Chorus 2",
-"M/J Chorus 3",
-"M/J Theatre 1",
-"M/J Creative Writing 1",
-"M/J Creative Writing 2",
-"M/J Creative Writing 3",
-"Fundamentals of Visual & Perf Arts",
-"Info & Comm Tech 1",
-"Info & Comm Tech 2",
-"Digital Information Technology",
-"App Creators/Automation & Robotics",
-"French 1",
-"French 2",
-"Spanish 1",
-"Spanish 2",
-"Japanese 1",
-"Advanced Academics, Future Business Leaders of America 1",
-"M/J Intro to Personal Financial Literacy"
-];
-
-const allRequestCourses=academicCompetitionCourses.concat(electiveCourses);
-
-const courseTeachers={
-"Odyssey of the Mind 1":"Ms. Aldridge","Odyssey of the Mind 2":"Ms. Aldridge","Odyssey of the Mind 3":"Ms. Aldridge",
-"FIRST Lego League Robotics 1":"Mr. Tanaka","FIRST Lego League Robotics 2":"Mr. Tanaka","FIRST Lego League Robotics 3":"Mr. Tanaka",
-"Science Olympiad 1":"Mrs. Whitfield","Science Olympiad 2":"Mrs. Whitfield","Science Olympiad 3":"Mrs. Whitfield",
-"Chess 1":"Mr. Stein","Chess 2":"Mr. Stein","Chess 3":"Mr. Stein",
-"Quiz Bowl 1":"Dr. Mercer","Quiz Bowl 2":"Dr. Mercer","Quiz Bowl 3":"Dr. Mercer",
-"Advanced Academics, Future Business Leaders of America 1":"Ms. Caldwell",
-"Advanced Academics, Future Business Leaders of America 2":"Ms. Caldwell",
-"Advanced Academics, Future Business Leaders of America 3":"Ms. Caldwell",
-"M/J Speech-Debate 1":"Mrs. Sinclair","M/J Speech-Debate 2":"Mrs. Sinclair","M/J Speech-Debate 3":"Mrs. Sinclair",
-"M/J 2-D Studio Art 1":"Ms. Marquez","M/J 2-D Studio Art 2":"Ms. Marquez",
-"M/J Creative Photography 1":"Mr. Ellison",
-"M/J Instrumental Ensemble":"Mr. Navarro",
-"M/J Chorus 1":"Mrs. Bellamy","M/J Chorus 2":"Mrs. Bellamy","M/J Chorus 3":"Mrs. Bellamy",
-"M/J Theatre 1":"Ms. Harrington",
-"M/J Creative Writing 1":"Mr. Fletcher","M/J Creative Writing 2":"Mr. Fletcher","M/J Creative Writing 3":"Mr. Fletcher",
-"Fundamentals of Visual & Perf Arts":"Mrs. Sato",
-"Info & Comm Tech 1":"Ms. Nguyen","Info & Comm Tech 2":"Ms. Nguyen",
-"Digital Information Technology":"Mr. Carver",
-"App Creators/Automation & Robotics":"Mrs. Lennox",
-"French 1":"Madame Laurent","French 2":"Madame Laurent",
-"Spanish 1":"Señora Cruz","Spanish 2":"Señora Cruz",
-"Japanese 1":"Mr. Yamamoto",
-"M/J Intro to Personal Financial Literacy":"Mr. Grayson"
-};
-
-const fakeNames=["Ava Brooks","Liam Carter","Sophia Lane","Noah Bennett","Mia Collins","Ethan Parker","Olivia Stone","Lucas Reed","Emma Wilson","Mason Gray"];
-let currentStudents=[];
-let currentResults=[];
-
-function displayCourseList(){
-let html="<div class='grid grid-2'><div><h3>Academic Competition Options</h3><ul>";
-academicCompetitionCourses.forEach(c=>html+="<li>"+c+"</li>");
-html+="</ul></div><div><h3>Elective Options</h3><ul>";
-electiveCourses.forEach(c=>html+="<li>"+c+"</li>");
-html+="</ul></div></div>";
-html+="<div class='note'><strong>Level Rule:</strong> Courses with 1, 2, and 3 are separate levels. Students should normally take them in order: 1, then 2, then 3.</div>";
-document.getElementById("courseList").innerHTML=html;
+function readTeacherNames() {
+  const names = SmartSchedule.defaultTeacherNames();
+  [6, 7, 8].forEach(function (grade) {
+    ["Math", "ELA", "History", "Science", "PE"].forEach(function (subject) {
+      const box = document.getElementById("g" + grade + subject);
+      const typed = box && box.value ? box.value.trim() : "";
+      if (typed) names[grade][subject] = typed;
+    });
+  });
+  return names;
 }
 
-function getCoreTeacher(grade,subject){
-return document.getElementById("g"+grade+subject).value;
+function displayCourseList() {
+  const competition = SmartSchedule.academicCompetitionCourses;
+  const electives = SmartSchedule.electiveCourses;
+  let html = "<div class='grid grid-2'><div><h3>Academic Competition Options</h3><ul>";
+  competition.forEach(function (course) {
+    html += "<li>" + SmartSchedule.escapeHtml(course) + "</li>";
+  });
+  html += "</ul></div><div><h3>Elective Options</h3><ul>";
+  electives.forEach(function (course) {
+    html += "<li>" + SmartSchedule.escapeHtml(course) + "</li>";
+  });
+  html += "</ul></div></div>";
+  html += "<div class='note'><strong>Level Rule:</strong> Courses with 1, 2, and 3 are separate levels. Students should normally take them in order: 1, then 2, then 3. Automatic backup classes are never level 2, level 3, or application-only competition courses.</div>";
+  document.getElementById("courseList").innerHTML = html;
 }
 
-function gradePriority(g){
-if(g===8)return 1;
-if(g===7)return 2;
-if(g===6)return 3;
-return 4;
+let currentStudents = [];
+let currentResults = [];
+let currentSections = null;
+let scheduleWarnings = [];
+
+function rememberRun(students, output) {
+  currentStudents = students;
+  currentResults = output.results;
+  currentSections = output.sections;
+  scheduleWarnings = output.warnings || [];
 }
 
-function getLunchAfterPeriod(g){
-return g===6?4:5;
+function runDemo() {
+  const students = SmartSchedule.createDemoStudents();
+  const output = SmartSchedule.generateSchedules(students, readTeacherNames());
+  rememberRun(students, output);
+  displayResults(currentResults, "10 Demo Students");
+  refreshStudentSelect();
 }
 
-function createEmptySchedule(){
-let s={};
-for(let i=1;i<=7;i++)s[i]=null;
-return s;
+function clearResults() {
+  currentStudents = [];
+  currentResults = [];
+  currentSections = null;
+  scheduleWarnings = [];
+  document.getElementById("summaryOutput").innerHTML = "No schedules generated yet.";
+  document.getElementById("resultsOutput").innerHTML = "";
+  document.getElementById("importMessage").innerHTML = "";
+  document.getElementById("editMessage").innerHTML = "";
+  refreshStudentSelect();
 }
 
-function normalizeText(text){
-return String(text||"").toLowerCase().replace(/m\/j/g,"mj").replace(/&/g,"and").replace(/[^a-z0-9 ]/g," ").replace(/\s+/g," ").trim();
+function runBulkImport() {
+  const text = document.getElementById("bulkInput").value;
+  const parsed = SmartSchedule.parseStudentCsv(text);
+  document.getElementById("importMessage").innerHTML = SmartSchedule.formatImportReport(parsed.errors, parsed.students.length);
+  if (parsed.students.length === 0) {
+    document.getElementById("import").scrollIntoView({ behavior: "smooth" });
+    return;
+  }
+  const output = SmartSchedule.generateSchedules(parsed.students, readTeacherNames());
+  rememberRun(parsed.students, output);
+  displayResults(currentResults, "Imported Student Data");
+  refreshStudentSelect();
+  if (parsed.errors.length > 0) document.getElementById("import").scrollIntoView({ behavior: "smooth" });
 }
 
-function matchCourse(input){
-const raw=String(input||"").trim();
-const clean=normalizeText(raw);
-if(!clean)return "";
-for(let c of allRequestCourses){if(normalizeText(c)===clean)return c;}
-for(let c of allRequestCourses){if(normalizeText(c).includes(clean)||clean.includes(normalizeText(c).slice(0,12)))return c;}
-return raw;
+function fillScheduleEditorDropdowns() {
+  const options = SmartSchedule.allScheduleOptions();
+  for (let period = 1; period <= 7; period++) {
+    const sel = document.getElementById("period" + period);
+    sel.innerHTML = "";
+    const blank = document.createElement("option");
+    blank.value = "";
+    blank.textContent = "Choose a class";
+    sel.appendChild(blank);
+    options.forEach(function (course) {
+      const opt = document.createElement("option");
+      opt.value = course;
+      opt.textContent = course;
+      sel.appendChild(opt);
+    });
+  }
 }
 
-function getMasterSections(){
-let sections={};
-
-[6,7,8].forEach(g=>{
-let corePeriods=[1,2,3,4].sort(()=>Math.random()-.5);
-sections[g+" Math"]=[{period:corePeriods[0],teacher:getCoreTeacher(g,"Math"),seats:30}];
-sections[g+" ELA"]=[{period:corePeriods[1],teacher:getCoreTeacher(g,"ELA"),seats:30}];
-sections[g+" History"]=[{period:corePeriods[2],teacher:getCoreTeacher(g,"History"),seats:30}];
-sections[g+" Science"]=[{period:corePeriods[3],teacher:getCoreTeacher(g,"Science"),seats:30}];
-
-let pePeriods=g===6?[5,6,7]:[1,6,7];
-sections[g+" PE"]=[
-{period:pePeriods[0],teacher:getCoreTeacher(g,"PE"),seats:40},
-{period:pePeriods[1],teacher:getCoreTeacher(g,"PE"),seats:40},
-{period:pePeriods[2],teacher:getCoreTeacher(g,"PE"),seats:40}
-];
-});
-
-allRequestCourses.forEach((course,index)=>{
-let periodSets=[[5,6,7],[6,7,5],[5,7,6],[1,6,7],[2,5,7]];
-let set=periodSets[index%periodSets.length];
-sections[course]=[
-{period:set[0],teacher:courseTeachers[course],seats:3},
-{period:set[1],teacher:courseTeachers[course],seats:3},
-{period:set[2],teacher:courseTeachers[course],seats:3}
-];
-});
-
-return sections;
+function refreshStudentSelect(preferredIndex) {
+  const sel = document.getElementById("studentSelect");
+  const keep = preferredIndex != null ? String(preferredIndex) : sel.value;
+  sel.innerHTML = "";
+  if (currentResults.length === 0) {
+    const opt = document.createElement("option");
+    opt.textContent = "No students loaded yet";
+    sel.appendChild(opt);
+    return;
+  }
+  currentResults.forEach(function (result, index) {
+    const opt = document.createElement("option");
+    opt.value = String(index);
+    const partial = result.complete === false ? " (partial)" : "";
+    opt.textContent = result.student.name + " - Rising Grade " + result.student.grade + partial;
+    sel.appendChild(opt);
+  });
+  let stillThere = false;
+  for (let i = 0; i < sel.options.length; i++) {
+    if (sel.options[i].value === keep) stillThere = true;
+  }
+  if (stillThere) sel.value = keep;
+  loadScheduleEditor();
 }
 
-function deepCopy(obj){return JSON.parse(JSON.stringify(obj));}
-
-function requiredCoursesForGrade(s){
-let r=[s.grade+" Math",s.grade+" ELA",s.grade+" History",s.grade+" Science"];
-if(!s.peWaiver)r.push(s.grade+" PE");
-return r;
+function loadScheduleEditor() {
+  if (currentResults.length === 0) return;
+  fillScheduleEditorDropdowns();
+  const index = Number(document.getElementById("studentSelect").value);
+  if (!Number.isInteger(index) || !currentResults[index]) return;
+  const result = currentResults[index];
+  for (let period = 1; period <= 7; period++) {
+    const item = result.schedule[period];
+    document.getElementById("period" + period).value = item && item.course ? item.course : "";
+  }
 }
 
-function placeClass(schedule,sections,courseName){
-if(!sections[courseName])return{placed:false};
-let possible=sections[courseName].filter(x=>x.seats>0&&schedule[x.period]===null);
-possible.sort((a,b)=>b.seats-a.seats||a.period-b.period);
-if(possible.length===0)return{placed:false};
-let chosen=possible[0];
-schedule[chosen.period]={course:courseName,teacher:chosen.teacher};
-chosen.seats--;
-return{placed:true};
+function saveScheduleOverride() {
+  if (currentResults.length === 0) return;
+  const index = Number(document.getElementById("studentSelect").value);
+  const result = currentResults[index];
+  if (!result) return;
+  const coursesByPeriod = {};
+  for (let period = 1; period <= 7; period++) {
+    coursesByPeriod[period] = document.getElementById("period" + period).value;
+  }
+  const outcome = SmartSchedule.applyManualOverride(result, coursesByPeriod, currentSections);
+  const message = document.getElementById("editMessage");
+  if (!outcome.ok) {
+    message.innerHTML = "<div class='warning'><strong>Cannot save:</strong> " + SmartSchedule.escapeHtml(outcome.error) + "</div>";
+    return;
+  }
+  displayResults(currentResults, "Manual Schedule Override Saved");
+  refreshStudentSelect(index);
+  message.innerHTML = "<div class='success'>Manual override saved. Cross-grade placement is allowed. Required classes stay on the schedule, duplicate subjects are blocked, and full classes are blocked. Seat counts were updated.</div>";
 }
 
-function fillMissingElective(schedule,student,sections,received,missed){
-for(let course of allRequestCourses){
-let result=placeClass(schedule,sections,course);
-if(result.placed){
-received.push({course:course,rank:"Backup"});
-return;
-}
-}
-}
-
-function buildStudentSchedule(student,sections){
-let schedule=createEmptySchedule();
-let notes=[],received=[],missed=[];
-
-requiredCoursesForGrade(student).forEach(course=>{
-let r=placeClass(schedule,sections,course);
-if(!r.placed)notes.push("Could not place required course: "+course);
-});
-
-let electiveTarget=student.peWaiver?3:2;
-
-student.rankings.forEach((course,index)=>{
-if(received.length>=electiveTarget)return;
-let matched=matchCourse(course);
-if(!matched)return;
-let r=placeClass(schedule,sections,matched);
-if(r.placed)received.push({course:matched,rank:index+1});
-else missed.push({course:matched,rank:index+1});
-});
-
-while(received.length<electiveTarget){
-fillMissingElective(schedule,student,sections,received,missed);
-if(received.length>=electiveTarget)break;
-else break;
-}
-
-return{student,schedule,notes,receivedElectives:received,missedElectives:missed,manual:false};
-}
-
-function generateRankings(){
-return [...allRequestCourses].sort(()=>Math.random()-.5).slice(0,5);
-}
-
-function createDemoStudents(){
-let students=[];
-for(let i=0;i<8;i++){
-let grades=[6,7,8];
-students.push({name:fakeNames[i],grade:grades[i%3],peWaiver:i===4,rankings:generateRankings()});
-}
-students.push({
-name:"Preference Example A",grade:6,peWaiver:false,
-rankings:["M/J 2-D Studio Art 1","Spanish 1","M/J Chorus 1","M/J Theatre 1","M/J Creative Writing 1"]
-});
-students.push({
-name:"Preference Example B",grade:8,peWaiver:false,
-rankings:["Spanish 1","M/J Chorus 1","M/J Theatre 1","M/J Creative Writing 1","M/J 2-D Studio Art 1"]
-});
-return students;
-}
-
-function generateSchedules(students){
-let sections=deepCopy(getMasterSections());
-let sorted=[...students].sort((a,b)=>gradePriority(a.grade)-gradePriority(b.grade));
-return sorted.map(s=>buildStudentSchedule(s,sections));
-}
-
-function runDemo(){
-currentStudents=createDemoStudents();
-currentResults=generateSchedules(currentStudents);
-displayResults(currentResults,"10 Demo Students");
-refreshStudentSelect();
-}
-
-function parseWaiver(v){
-let c=normalizeText(v);
-return c==="yes"||c==="y"||c==="waiver"||c==="signed";
-}
-
-function splitCsvLine(line){
-let result=[],current="",inQuotes=false;
-for(let i=0;i<line.length;i++){
-let char=line[i];
-if(char==='"')inQuotes=!inQuotes;
-else if(char===","&&!inQuotes){result.push(current.trim());current="";}
-else current+=char;
-}
-result.push(current.trim());
-return result;
-}
-
-function runBulkImport(){
-let text=document.getElementById("bulkInput").value.trim();
-let lines=text.split("\n").map(x=>x.trim()).filter(Boolean);
-if(lines.length<2){alert("Please include a header row and at least one student row.");return;}
-let students=[];
-for(let i=1;i<lines.length;i++){
-let p=splitCsvLine(lines[i]);
-if(p.length<4)continue;
-students.push({
-name:p[0],
-grade:Number(String(p[1]).replace(/[^0-9]/g,"")),
-peWaiver:parseWaiver(p[2]),
-rankings:p.slice(3,8).map(matchCourse)
-});
-}
-currentStudents=students;
-currentResults=generateSchedules(currentStudents);
-displayResults(currentResults,"Imported Student Data");
-refreshStudentSelect();
-}
-
-function allScheduleOptions(){
-let options=[];
-[6,7,8].forEach(g=>{
-options.push(g+" Math",g+" ELA",g+" History",g+" Science",g+" PE");
-});
-return options.concat(allRequestCourses);
-}
-
-function fillScheduleEditorDropdowns(){
-for(let p=1;p<=7;p++){
-let sel=document.getElementById("period"+p);
-sel.innerHTML="";
-allScheduleOptions().forEach(c=>{
-let opt=document.createElement("option");
-opt.value=c;
-opt.textContent=c;
-sel.appendChild(opt);
-});
-}
-}
-
-function refreshStudentSelect(){
-let sel=document.getElementById("studentSelect");
-sel.innerHTML="";
-if(currentResults.length===0){
-let opt=document.createElement("option");
-opt.textContent="No students loaded yet";
-sel.appendChild(opt);
-return;
-}
-currentResults.forEach((r,i)=>{
-let opt=document.createElement("option");
-opt.value=i;
-opt.textContent=r.student.name+" - Rising Grade "+r.student.grade;
-sel.appendChild(opt);
-});
-loadScheduleEditor();
-}
-
-function loadScheduleEditor(){
-if(currentResults.length===0)return;
-fillScheduleEditorDropdowns();
-let i=Number(document.getElementById("studentSelect").value);
-let result=currentResults[i];
-for(let p=1;p<=7;p++){
-document.getElementById("period"+p).value=result.schedule[p].course;
-}
-}
-
-function subjectFamily(course){
-if(course.includes("Math"))return "Math";
-if(course.includes("ELA"))return "ELA";
-if(course.includes("History"))return "History";
-if(course.includes("Science") && !course.includes("Science Olympiad"))return "Science";
-if(course.includes("PE"))return "PE";
-return course.replace(/ 1$| 2$| 3$/,"");
-}
-
-function validateManualSchedule(courses){
-let families={};
-for(let c of courses){
-let fam=subjectFamily(c);
-if(families[fam]){
-return "Duplicate schedule problem: " + c + " repeats the same subject/course family as another period.";
-}
-families[fam]=true;
-}
-return "";
-}
-
-function teacherForCourse(course){
-for(let g of [6,7,8]){
-if(course===g+" Math")return getCoreTeacher(g,"Math");
-if(course===g+" ELA")return getCoreTeacher(g,"ELA");
-if(course===g+" History")return getCoreTeacher(g,"History");
-if(course===g+" Science")return getCoreTeacher(g,"Science");
-if(course===g+" PE")return getCoreTeacher(g,"PE");
-}
-return courseTeachers[course]||"Assigned Teacher";
-}
-
-function saveScheduleOverride(){
-if(currentResults.length===0)return;
-let i=Number(document.getElementById("studentSelect").value);
-let result=currentResults[i];
-
-let courses=[];
-for(let p=1;p<=7;p++)courses.push(document.getElementById("period"+p).value);
-
-let error=validateManualSchedule(courses);
-if(error){
-document.getElementById("editMessage").innerHTML="<div class='warning'><strong>Cannot save:</strong> "+error+"</div>";
-return;
-}
-
-for(let p=1;p<=7;p++){
-let course=courses[p-1];
-result.schedule[p]={course:course,teacher:teacherForCourse(course)};
-}
-
-result.manual=true;
-displayResults(currentResults,"Manual Schedule Override Saved");
-refreshStudentSelect();
-document.getElementById("editMessage").innerHTML="<div class='success'>Manual override saved. Cross-grade placement is allowed, but duplicate subjects are blocked.</div>";
-}
-
-function displayResults(results,modeName){
-let total=results.length,firstChoice=0,anyElective=0,manualCount=0;
-results.forEach(r=>{
-if(r.manual)manualCount++;
-if(r.receivedElectives.some(e=>e.rank===1))firstChoice++;
-if(r.receivedElectives.length>0)anyElective++;
-});
-document.getElementById("summaryOutput").innerHTML=`
-<div class="grid grid-4">
-<div class="stat"><strong>${total}</strong>Students Scheduled</div>
-<div class="stat"><strong>${firstChoice}</strong>Received 1st Choice</div>
-<div class="stat"><strong>${anyElective}</strong>Received Requested Course</div>
-<div class="stat"><strong>${manualCount}</strong>Manual Overrides</div>
-</div>
-<div class="success"><strong>${modeName}:</strong> Core classes were placed first, then PE if required, then electives.</div>`;
-let html="";
-results.forEach(r=>html+=createScheduleHtml(r));
-document.getElementById("resultsOutput").innerHTML=html;
-document.getElementById("results").scrollIntoView({behavior:"smooth"});
-}
-
-function createScheduleHtml(result){
-let s=result.student,lunchAfter=getLunchAfterPeriod(s.grade);
-let rankingHtml="";
-s.rankings.forEach((course,i)=>{if(course)rankingHtml+=`<span class="pill">#${i+1}: ${course}</span>`});
-let rows="";
-for(let p=1;p<=7;p++){
-let item=result.schedule[p];
-rows+=`<tr><td>Period ${p}</td><td>${item.course}</td><td>${item.teacher}</td></tr>`;
-if(p===lunchAfter)rows+=`<tr class="lunch-row"><td colspan="3">Lunch Break After Period ${lunchAfter}</td></tr>`;
-}
-let received=result.receivedElectives.length?result.receivedElectives.map(e=>`<span class="${e.rank<=2||e.rank==="Backup"?"rank-good":"rank-low"}">${e.course} (#${e.rank})</span>`).join(", "):"No requested courses placed";
-let missed=result.missedElectives.length?result.missedElectives.map(e=>`${e.course} (#${e.rank})`).join(", "):"None";
-let manual=result.manual?`<div class="note"><strong>Manual Override:</strong> This student's assigned schedule was manually adjusted.</div>`:"";
-return `<div class="schedule-card">
-<div class="schedule-title">${s.name} | Rising Grade ${s.grade}${s.peWaiver?" | PE Waiver Recorded":""}${result.manual?" | Manually Edited":""}</div>
-<div style="padding:14px;">
-<div class="small"><strong>Original Ranked Requests:</strong><br>${rankingHtml}</div>
-<table><tr><th>Time</th><th>Assigned Class</th><th>Teacher</th></tr>${rows}</table>
-<p class="small"><strong>Requested Courses Received:</strong> ${received}<br><strong>Requested Courses Not Placed:</strong> ${missed}</p>
-${manual}
-</div></div>`;
-}
-
-function clearResults(){
-currentStudents=[];
-currentResults=[];
-document.getElementById("summaryOutput").innerHTML="No schedules generated yet.";
-document.getElementById("resultsOutput").innerHTML="";
-refreshStudentSelect();
+function displayResults(results, modeName) {
+  document.getElementById("summaryOutput").innerHTML = SmartSchedule.createSummaryHtml(results, modeName, scheduleWarnings);
+  let html = "";
+  results.forEach(function (result) {
+    html += SmartSchedule.createScheduleHtml(result);
+  });
+  document.getElementById("resultsOutput").innerHTML = html;
+  document.getElementById("results").scrollIntoView({ behavior: "smooth" });
 }
 
 displayCourseList();
