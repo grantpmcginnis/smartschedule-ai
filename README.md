@@ -95,3 +95,15 @@ If a student still cannot be fully scheduled, or a save would break a rule, the 
 - It does not collect applications for competition courses. A requested competition course is placed when a seat is open.
 - It does not move earlier students out of the way. If the school is over full, later students are marked partial instead of breaking the rules above.
 - It does not store anything. There are no accounts, no database, and no real student records.
+<h1>DYLAN STUFF</h1>
+Keep the public preview separate from the school program. Use the Replit preview for demonstrations with fake data. Give each school an installable or portable copy that runs on its own computer; don’t use a public URL for real student files.
+
+Keep school setup separate from student records. Save courses, sections, teachers, periods, and rules in a school configuration file. Import student data only when scheduling, and keep the generated schedule as a local file. If student history isn’t needed, don’t retain the roster after the session.
+
+Make saved setup recoverable. A named configuration file with backup and restore is safer than relying only on browser storage, which can be cleared. A local database such as SQLite is another option if the school needs schedule history; it doesn’t have to be cloud-hosted.
+
+Make the privacy claim verifiable. The school version should have no analytics, cloud calls, remote fonts, or external services during use. Test its network activity and document the results before promising that student information stays on school grounds.
+
+Validate the 2,000-student target with realistic schedules. The current demo’s seat limits won’t support that. Test using realistic sections and capacities, show clear warnings for students who can’t be placed, and avoid loading all 2,000 detailed schedules into the page at once.
+
+Treat Skyward as file compatibility. Use the school’s required import/export templates to map columns and generate the correct output file. A live Skyward connection isn’t necessary for this workflow.
