@@ -429,6 +429,90 @@ test("CSV import reports bad rows and does not guess a course", () => {
   assert.ok(report.includes("Import problems"));
 });
 
+test("the paste box accepts everyday wording and asks when a name is ambiguous", () => {
+  function only(text) {
+    const parsed = ss.parseStudentCsv(text);
+    assert.equal(parsed.errors.length, 0, parsed.errors.map(error => error.message).join("\n"));
+    assert.equal(parsed.questions.length, 0);
+    assert.equal(parsed.students.length, 1);
+    return parsed;
+  }
+
+  const spanishOne = only("Name,Grade,PE Waiver,Choice 1\nAva,6,No,span one\n");
+  assert.deepEqual(spanishOne.students[0].rankings, ["Spanish 1"]);
+  assert.match(spanishOne.notes[0].message, /Read "span one" as Spanish 1\./);
+
+  const span = only("Ava,7th,yeah,Span 1");
+  assert.equal(span.students[0].grade, 7);
+  assert.equal(span.students[0].peWaiver, true);
+  assert.deepEqual(span.students[0].rankings, ["Spanish 1"]);
+
+  const roman = only("Ava Brooks 8th grade span I");
+  assert.equal(roman.students[0].name, "Ava Brooks");
+  assert.equal(roman.students[0].grade, 8);
+  assert.equal(roman.students[0].peWaiver, false);
+  assert.deepEqual(roman.students[0].rankings, ["Spanish 1"]);
+  assert.ok(roman.notes.some(note => /still takes PE/.test(note.message)));
+
+  const robotics = only("Sam,seventh,nope,robotics 2");
+  assert.equal(robotics.students[0].grade, 7);
+  assert.equal(robotics.students[0].peWaiver, false);
+  assert.deepEqual(robotics.students[0].rankings, ["FIRST Lego League Robotics 2"]);
+
+  const fll = only("Sam\tgrade 7\twaived\tFLL 1");
+  assert.equal(fll.students[0].peWaiver, true);
+  assert.deepEqual(fll.students[0].rankings, ["FIRST Lego League Robotics 1"]);
+
+  const info = only("Sam, 6, no, info tech 1");
+  assert.deepEqual(info.students[0].rankings, ["Info & Comm Tech 1"]);
+
+  const several = only("Sam ,  8th , no ,  photo 1 , art 1 , debate 1");
+  assert.deepEqual(several.students[0].rankings, [
+    "M/J Creative Photography 1",
+    "M/J 2-D Studio Art 1",
+    "M/J Speech-Debate 1"
+  ]);
+
+  const typo = only("Ava,6,0,spanih 1");
+  assert.equal(typo.students[0].peWaiver, false);
+  assert.deepEqual(typo.students[0].rankings, ["Spanish 1"]);
+  assert.match(typo.notes.map(note => note.message).join(" "), /spanih 1/);
+
+  const blank = only("Sam,6,,span one");
+  assert.equal(blank.students[0].peWaiver, false);
+  assert.ok(blank.notes.some(note => /blank PE waiver/.test(note.message)));
+
+  const words = ss.parseStudentCsv("A,6,yep,french 1\nB,eighth,false,band\nC,grade 8,1,japan 1");
+  assert.deepEqual(words.students.map(student => [student.grade, student.peWaiver, student.rankings[0]]), [
+    [6, true, "French 1"],
+    [8, false, "M/J Instrumental Ensemble"],
+    [8, true, "Japanese 1"]
+  ]);
+
+  const free = only("Ava Brooks 7th no span one art 1");
+  assert.deepEqual(free.students[0].rankings, ["Spanish 1", "M/J 2-D Studio Art 1"]);
+
+  const ambiguous = ss.parseStudentCsv("Ava,6,no,spanih");
+  assert.equal(ambiguous.students.length, 0);
+  assert.equal(ambiguous.questions.length, 1);
+  assert.deepEqual(ambiguous.questions[0].pending[0].options, ["Spanish 1", "Spanish 2"]);
+  const picked = ss.answerImportQuestion(ambiguous.questions[0], "Spanish 2");
+  assert.equal(picked.done, true);
+  assert.deepEqual(picked.student.rankings, ["Spanish 2"]);
+  assert.match(picked.notes.join(" "), /Read "spanih" as Spanish 2\./);
+
+  const quiz = ss.parseStudentCsv("Sam,6,yes,span one,Quiz Bowl");
+  assert.equal(quiz.students.length, 0);
+  assert.deepEqual(quiz.questions[0].resolved, ["Spanish 1"]);
+  assert.deepEqual(quiz.questions[0].pending[0].options, ["Quiz Bowl 1", "Quiz Bowl 2", "Quiz Bowl 3"]);
+  const quizPick = ss.answerImportQuestion(quiz.questions[0], "Quiz Bowl 1");
+  assert.deepEqual(quizPick.student.rankings, ["Spanish 1", "Quiz Bowl 1"]);
+
+  assert.deepEqual(ss.searchCourses("span"), ["Spanish 1", "Spanish 2"]);
+  assert.ok(ss.searchCourses("fll").every(course => course.indexOf("Robotics") !== -1));
+  assert.deepEqual(ss.searchCourses("photo"), ["M/J Creative Photography 1"]);
+});
+
 test("the sample import on the page schedules three students", () => {
   const sample = [
     "Name,Grade,PE Waiver,Choice 1,Choice 2,Choice 3,Choice 4,Choice 5",

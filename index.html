@@ -35,6 +35,10 @@ th{background:#e0ecff;color:#0f172a}
 .pill{display:inline-block;background:#dbeafe;color:#1e3a8a;padding:5px 9px;margin:3px;border-radius:999px;font-size:12px;font-weight:bold}
 .rank-good{color:#15803d;font-weight:bold}.rank-low{color:#b45309;font-weight:bold}
 .lunch-row{background:#fef3c7;font-weight:bold;color:#92400e}
+.combo{position:relative}
+.combo-menu{position:absolute;z-index:30;left:0;right:0;top:calc(100% + 4px);background:#fff;border:1px solid #cbd5e1;border-radius:10px;max-height:220px;overflow:auto;box-shadow:0 8px 22px rgba(15,23,42,.12)}
+button.combo-option{display:block;width:100%;margin:0;border-radius:0;background:#fff;color:#1f2937;font-weight:normal;text-align:left}
+button.combo-option:hover,button.combo-option[data-active="true"]{background:#eff6ff;color:#1e3a8a}
 footer{text-align:center;padding:30px;color:#64748b;font-size:13px}
 @media(max-width:900px){.grid-2,.grid-3,.grid-4{grid-template-columns:1fr}header h1{font-size:34px}nav a{display:inline-block;margin:6px}}
 </style>
@@ -51,7 +55,8 @@ footer{text-align:center;padding:30px;color:#64748b;font-size:13px}
 <a href="#settings">Master Schedule</a>
 <a href="#courses">Courses</a>
 <a href="#demo">Demo</a>
-<a href="#import">Import</a>
+<a href="#roster">Add Students</a>
+<a href="#import">Paste a List</a>
 <a href="#editor">Manual Override</a>
 <a href="#results">Results</a>
 </nav>
@@ -120,16 +125,60 @@ footer{text-align:center;padding:30px;color:#64748b;font-size:13px}
 </div>
 </section>
 
+<section id="roster">
+<div class="card">
+<h2>Add a Student</h2>
+<p>This is the easiest way to add someone. Type their name, pick a grade, and choose electives from the list. The list filters as you type, so a course name cannot be misspelled.</p>
+<div id="studentFormMessage"></div>
+<div class="grid grid-2">
+<div>
+<label for="studentName">Student name</label>
+<input id="studentName" placeholder="Example: Ava Brooks" autocomplete="name">
+<label for="studentGrade">Grade</label>
+<select id="studentGrade">
+<option value="">Choose a grade</option>
+<option value="6">6th</option>
+<option value="7">7th</option>
+<option value="8">8th</option>
+</select>
+<label for="studentWaiver">PE waiver</label>
+<select id="studentWaiver">
+<option value="no">No — this student takes PE</option>
+<option value="yes">Yes — PE is waived</option>
+</select>
+</div>
+<div>
+<label for="choiceInput1">1st choice</label>
+<div class="combo"><input id="choiceInput1" placeholder="Type to search courses" autocomplete="off"><div class="combo-menu" id="choiceMenu1" hidden></div></div>
+<label for="choiceInput2">2nd choice</label>
+<div class="combo"><input id="choiceInput2" placeholder="Optional" autocomplete="off"><div class="combo-menu" id="choiceMenu2" hidden></div></div>
+<label for="choiceInput3">3rd choice</label>
+<div class="combo"><input id="choiceInput3" placeholder="Optional" autocomplete="off"><div class="combo-menu" id="choiceMenu3" hidden></div></div>
+<label for="choiceInput4">4th choice</label>
+<div class="combo"><input id="choiceInput4" placeholder="Optional" autocomplete="off"><div class="combo-menu" id="choiceMenu4" hidden></div></div>
+<label for="choiceInput5">5th choice</label>
+<div class="combo"><input id="choiceInput5" placeholder="Optional" autocomplete="off"><div class="combo-menu" id="choiceMenu5" hidden></div></div>
+</div>
+</div>
+<button type="button" id="saveStudentButton" onclick="saveRosterStudent()">Add student</button>
+<button type="button" class="secondary" onclick="resetStudentForm()">Clear form</button>
+<h3>Students ready to schedule</h3>
+<div id="rosterList" class="small">No students yet. Add one with the form, or paste a list below.</div>
+<button type="button" id="scheduleRosterButton" onclick="scheduleRoster()">Make schedules for these students</button>
+</div>
+</section>
+
 <section id="import">
 <div class="card">
-<h2>School-Wide Import Mode</h2>
-<div class="note"><strong>Format:</strong><br>Name, Grade, PE Waiver, Choice 1, Choice 2, Choice 3, Choice 4, Choice 5<br>Use the full course name from the list above. Grades must be 6, 7, or 8. Problems are listed under the button. Nothing is guessed.</div>
+<h2>Paste a List</h2>
+<div class="note"><strong>You can type like a person.</strong><br>One student per line. Commas, tabs, or just spaces are fine. A header row is optional.<br>Examples that work: <em>Ava Brooks 7th no span one art 1</em> or <em>Sam, seventh, yeah, FLL 1, photo 1</em>.<br>If a name could be more than one course, you will get buttons to pick. Nothing is guessed.</div>
 <textarea id="bulkInput">Name,Grade,PE Waiver,Choice 1,Choice 2,Choice 3,Choice 4,Choice 5
 Student A,6,No,"M/J 2-D Studio Art 1","Info & Comm Tech 1","M/J Creative Writing 1","M/J Theatre 1","Spanish 1"
 Student B,7,No,"FIRST Lego League Robotics 1","Digital Information Technology","App Creators/Automation & Robotics","Quiz Bowl 1","Japanese 1"
 Student C,8,Yes,"M/J Speech-Debate 1","M/J Creative Photography 1","French 1","M/J Intro to Personal Financial Literacy","Chess 1"</textarea>
-<button onclick="runBulkImport()">Generate Imported Schedules</button>
+<button type="button" id="importButton" onclick="runBulkImport()">Add pasted students</button>
 <div id="importMessage"></div>
+<div id="importQuestions"></div>
 </div>
 </section>
 
@@ -206,6 +255,11 @@ let currentStudents = [];
 let currentResults = [];
 let currentSections = null;
 let scheduleWarnings = [];
+let roster = [];
+let nextRosterId = 1;
+let editingId = null;
+let pendingQuestions = [];
+let importNotes = { notes: [], hard: [], added: 0 };
 
 function rememberRun(students, output) {
   currentStudents = students;
@@ -230,23 +284,407 @@ function clearResults() {
   document.getElementById("summaryOutput").innerHTML = "No schedules generated yet.";
   document.getElementById("resultsOutput").innerHTML = "";
   document.getElementById("importMessage").innerHTML = "";
+  document.getElementById("importQuestions").innerHTML = "";
   document.getElementById("editMessage").innerHTML = "";
+  document.getElementById("studentFormMessage").innerHTML = "";
+  pendingQuestions = [];
+  importNotes = { notes: [], hard: [], added: 0 };
   refreshStudentSelect();
+}
+
+function formMessage(kind, text) {
+  const box = document.getElementById("studentFormMessage");
+  if (!text) {
+    box.innerHTML = "";
+    return;
+  }
+  box.innerHTML = "<div class='" + kind + "'>" + SmartSchedule.escapeHtml(text) + "</div>";
+}
+
+function choiceInput(index) {
+  return document.getElementById("choiceInput" + index);
+}
+
+function readChoice(index) {
+  const input = choiceInput(index);
+  const typed = input.value.trim();
+  if (!typed) return "";
+  if (input.dataset.course && input.dataset.course === typed) return input.dataset.course;
+  const official = SmartSchedule.allRequestCourses.find(function (course) {
+    return course.toLowerCase() === typed.toLowerCase();
+  });
+  return official || null;
+}
+
+function resetStudentForm() {
+  editingId = null;
+  document.getElementById("studentName").value = "";
+  document.getElementById("studentGrade").value = "";
+  document.getElementById("studentWaiver").value = "no";
+  for (let index = 1; index <= 5; index++) {
+    const input = choiceInput(index);
+    input.value = "";
+    input.dataset.course = "";
+    document.getElementById("choiceMenu" + index).hidden = true;
+  }
+  document.getElementById("saveStudentButton").textContent = "Add student";
+  formMessage("", "");
+}
+
+function saveRosterStudent() {
+  const name = document.getElementById("studentName").value.trim();
+  const grade = Number(document.getElementById("studentGrade").value);
+  const peWaiver = document.getElementById("studentWaiver").value === "yes";
+  if (!name) {
+    formMessage("warning", "Type the student's name.");
+    return;
+  }
+  if (grade !== 6 && grade !== 7 && grade !== 8) {
+    formMessage("warning", "Choose grade 6, 7, or 8.");
+    return;
+  }
+  const rankings = [];
+  for (let index = 1; index <= 5; index++) {
+    const choice = readChoice(index);
+    if (choice === null) {
+      formMessage("warning", "Pick choice " + index + " from the list, so the course name is exact.");
+      return;
+    }
+    if (!choice) continue;
+    if (rankings.indexOf(choice) !== -1) {
+      formMessage("warning", choice + " is listed twice. Each choice should be a different course.");
+      return;
+    }
+    rankings.push(choice);
+  }
+  const duplicate = roster.find(function (student) {
+    return student.name.toLowerCase() === name.toLowerCase() && student.id !== editingId;
+  });
+  if (duplicate) {
+    formMessage("warning", name + " is already on the list. Click Edit on that row to change it.");
+    return;
+  }
+  const wasEdit = editingId != null;
+  if (wasEdit) {
+    const current = roster.find(function (student) { return student.id === editingId; });
+    if (current) {
+      current.name = name;
+      current.grade = grade;
+      current.peWaiver = peWaiver;
+      current.rankings = rankings;
+    }
+  } else {
+    roster.push({ id: nextRosterId++, name: name, grade: grade, peWaiver: peWaiver, rankings: rankings });
+  }
+  renderRoster();
+  resetStudentForm();
+  formMessage("success", wasEdit
+    ? "Saved changes for " + name + "."
+    : name + " was added. Click Make schedules when the list looks right.");
+}
+
+function renderRoster() {
+  const box = document.getElementById("rosterList");
+  box.innerHTML = "";
+  if (roster.length === 0) {
+    box.textContent = "No students yet. Add one with the form, or paste a list below.";
+    return;
+  }
+  const table = document.createElement("table");
+  const head = document.createElement("tr");
+  ["Name", "Grade", "PE waiver", "Choices", ""].forEach(function (label) {
+    const cell = document.createElement("th");
+    cell.textContent = label;
+    head.appendChild(cell);
+  });
+  table.appendChild(head);
+  roster.forEach(function (student) {
+    const row = document.createElement("tr");
+    [student.name, String(student.grade), student.peWaiver ? "Yes" : "No", student.rankings.join(", ") || "None yet"].forEach(function (value) {
+      const cell = document.createElement("td");
+      cell.textContent = value;
+      row.appendChild(cell);
+    });
+    const actions = document.createElement("td");
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "secondary";
+    edit.textContent = "Edit";
+    edit.addEventListener("click", function () { editRosterStudent(student.id); });
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "secondary";
+    remove.textContent = "Remove";
+    remove.addEventListener("click", function () { removeRosterStudent(student.id); });
+    actions.appendChild(edit);
+    actions.appendChild(remove);
+    row.appendChild(actions);
+    table.appendChild(row);
+  });
+  box.appendChild(table);
+}
+
+function editRosterStudent(id) {
+  const student = roster.find(function (item) { return item.id === id; });
+  if (!student) return;
+  editingId = id;
+  document.getElementById("studentName").value = student.name;
+  document.getElementById("studentGrade").value = String(student.grade);
+  document.getElementById("studentWaiver").value = student.peWaiver ? "yes" : "no";
+  for (let index = 1; index <= 5; index++) {
+    const input = choiceInput(index);
+    const course = student.rankings[index - 1] || "";
+    input.value = course;
+    input.dataset.course = course;
+  }
+  document.getElementById("saveStudentButton").textContent = "Save changes";
+  formMessage("note", "Editing " + student.name + ". Save changes when you are done.");
+  document.getElementById("roster").scrollIntoView({ behavior: "smooth" });
+}
+
+function removeRosterStudent(id) {
+  roster = roster.filter(function (student) { return student.id !== id; });
+  if (editingId === id) resetStudentForm();
+  renderRoster();
+}
+
+function scheduleRoster() {
+  if (roster.length === 0) {
+    formMessage("warning", "Add at least one student before making schedules.");
+    return;
+  }
+  const students = roster.map(function (student) {
+    return {
+      name: student.name,
+      grade: student.grade,
+      peWaiver: student.peWaiver,
+      rankings: student.rankings.slice()
+    };
+  });
+  const output = SmartSchedule.generateSchedules(students, readTeacherNames());
+  rememberRun(students, output);
+  displayResults(currentResults, "Students You Entered");
+  refreshStudentSelect();
+}
+
+function renderImportNotes() {
+  const hard = importNotes.hard || [];
+  const notes = importNotes.notes || [];
+  let html = "";
+  if (notes.length) {
+    html += "<div class='note'><strong>We read a few names this way:</strong><ul>";
+    notes.forEach(function (note) {
+      html += "<li>" + SmartSchedule.escapeHtml(note.message) + "</li>";
+    });
+    html += "</ul></div>";
+  }
+  if (hard.length) {
+    html += SmartSchedule.formatImportReport(hard, 0);
+  } else if ((importNotes.added || 0) > 0 && pendingQuestions.length === 0) {
+    html += "<div class='success'><strong>Added " + importNotes.added + " student" +
+      (importNotes.added === 1 ? "" : "s") + ".</strong> Their schedules are below.</div>";
+  } else if (pendingQuestions.length > 0) {
+    html += "<div class='note'><strong>One more step.</strong> Pick the course you meant. Nothing was guessed.</div>";
+  }
+  document.getElementById("importMessage").innerHTML = html;
+}
+
+function renderQuestions() {
+  const box = document.getElementById("importQuestions");
+  box.innerHTML = "";
+  pendingQuestions.forEach(function (question) {
+    if (!question.pending.length) return;
+    const problem = question.pending[0];
+    const wrap = document.createElement("div");
+    wrap.className = "note";
+    const title = document.createElement("strong");
+    title.textContent = "Did you mean…?";
+    wrap.appendChild(title);
+    const sentence = document.createElement("p");
+    sentence.textContent = question.name + " wrote \"" + problem.typed + "\". That name matches more than one course.";
+    wrap.appendChild(sentence);
+    problem.options.forEach(function (course) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = course;
+      button.addEventListener("click", function () { pickQuestionCourse(question.id, course); });
+      wrap.appendChild(button);
+    });
+    const error = document.createElement("div");
+    error.className = "small";
+    error.id = "qerr-" + question.id;
+    wrap.appendChild(error);
+    box.appendChild(wrap);
+  });
+}
+
+function pickQuestionCourse(questionId, course) {
+  const index = pendingQuestions.findIndex(function (question) { return question.id === questionId; });
+  if (index < 0) return;
+  const outcome = SmartSchedule.answerImportQuestion(pendingQuestions[index], course);
+  if (!outcome.ok) {
+    const error = document.getElementById("qerr-" + questionId);
+    if (error) error.textContent = outcome.error;
+    return;
+  }
+  if (!outcome.done) {
+    pendingQuestions[index] = outcome.question;
+    renderQuestions();
+    return;
+  }
+  pendingQuestions.splice(index, 1);
+  const already = roster.some(function (student) {
+    return student.name.toLowerCase() === outcome.student.name.toLowerCase();
+  });
+  if (!already) {
+    roster.push({
+      id: nextRosterId++,
+      name: outcome.student.name,
+      grade: outcome.student.grade,
+      peWaiver: outcome.student.peWaiver,
+      rankings: outcome.student.rankings.slice()
+    });
+  }
+  importNotes.notes = (importNotes.notes || []).concat(outcome.notes.map(function (message) {
+    return { message: message };
+  }));
+  importNotes.added = roster.length;
+  renderRoster();
+  renderQuestions();
+  renderImportNotes();
+  if (pendingQuestions.length === 0) scheduleRoster();
 }
 
 function runBulkImport() {
   const text = document.getElementById("bulkInput").value;
   const parsed = SmartSchedule.parseStudentCsv(text);
-  document.getElementById("importMessage").innerHTML = SmartSchedule.formatImportReport(parsed.errors, parsed.students.length);
-  if (parsed.students.length === 0) {
-    document.getElementById("import").scrollIntoView({ behavior: "smooth" });
+  const hard = (parsed.errors || []).filter(function (error) { return !error.questionId; });
+  const addedStudents = [];
+  parsed.students.forEach(function (student) {
+    const taken = roster.some(function (item) { return item.name.toLowerCase() === student.name.toLowerCase(); }) ||
+      addedStudents.some(function (item) { return item.name.toLowerCase() === student.name.toLowerCase(); });
+    if (taken) {
+      hard.push({ message: student.name + " is already on the list, so that row was skipped." });
+      return;
+    }
+    addedStudents.push(student);
+    roster.push({
+      id: nextRosterId++,
+      name: student.name,
+      grade: student.grade,
+      peWaiver: student.peWaiver,
+      rankings: (student.rankings || []).slice()
+    });
+  });
+  pendingQuestions = (parsed.questions || []).map(function (question) {
+    return {
+      id: question.id,
+      line: question.line,
+      name: question.name,
+      grade: question.grade,
+      peWaiver: question.peWaiver,
+      resolved: question.resolved.slice(),
+      pending: question.pending.map(function (problem) {
+        return { typed: problem.typed, options: problem.options.slice() };
+      }),
+      notes: question.notes.slice()
+    };
+  });
+  importNotes = { notes: (parsed.notes || []).slice(), hard: hard, added: addedStudents.length };
+  renderRoster();
+  renderImportNotes();
+  renderQuestions();
+  if (pendingQuestions.length === 0 && addedStudents.length > 0) {
+    scheduleRoster();
+    if ((parsed.notes || []).length > 0) document.getElementById("import").scrollIntoView({ behavior: "smooth" });
     return;
   }
-  const output = SmartSchedule.generateSchedules(parsed.students, readTeacherNames());
-  rememberRun(parsed.students, output);
-  displayResults(currentResults, "Imported Student Data");
-  refreshStudentSelect();
-  if (parsed.errors.length > 0) document.getElementById("import").scrollIntoView({ behavior: "smooth" });
+  document.getElementById("import").scrollIntoView({ behavior: "smooth" });
+}
+
+function closeComboMenus(except) {
+  for (let index = 1; index <= 5; index++) {
+    const menu = document.getElementById("choiceMenu" + index);
+    if (menu !== except) menu.hidden = true;
+  }
+}
+
+function chooseCourse(input, menu, course) {
+  input.value = course;
+  input.dataset.course = course;
+  menu.hidden = true;
+}
+
+function showCourseMatches(input, menu, query) {
+  const matches = SmartSchedule.searchCourses(query);
+  const shown = query.trim() ? matches.slice(0, 8) : matches;
+  menu.innerHTML = "";
+  if (shown.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "small";
+    empty.style.padding = "10px";
+    empty.textContent = "No course has a name like that.";
+    menu.appendChild(empty);
+    menu.hidden = false;
+    return;
+  }
+  shown.forEach(function (course, index) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "combo-option";
+    button.textContent = course;
+    if (index === 0) button.setAttribute("data-active", "true");
+    button.addEventListener("mousedown", function (event) {
+      event.preventDefault();
+      chooseCourse(input, menu, course);
+    });
+    menu.appendChild(button);
+  });
+  menu.hidden = false;
+}
+
+function moveComboSelection(menu, direction) {
+  const buttons = Array.prototype.slice.call(menu.querySelectorAll("button"));
+  if (buttons.length === 0) return;
+  let current = buttons.findIndex(function (button) { return button.getAttribute("data-active") === "true"; });
+  if (current === -1) current = 0;
+  buttons[current].removeAttribute("data-active");
+  const next = (current + direction + buttons.length) % buttons.length;
+  buttons[next].setAttribute("data-active", "true");
+  buttons[next].scrollIntoView({ block: "nearest" });
+}
+
+function setupCourseCombos() {
+  for (let index = 1; index <= 5; index++) {
+    const input = choiceInput(index);
+    const menu = document.getElementById("choiceMenu" + index);
+    input.addEventListener("focus", function () { showCourseMatches(input, menu, input.value); });
+    input.addEventListener("input", function () {
+      input.dataset.course = "";
+      showCourseMatches(input, menu, input.value);
+    });
+    input.addEventListener("keydown", function (event) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        if (menu.hidden) showCourseMatches(input, menu, input.value);
+        moveComboSelection(menu, 1);
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        moveComboSelection(menu, -1);
+      } else if (event.key === "Enter") {
+        const active = menu.querySelector("button[data-active='true']");
+        if (active && !menu.hidden) {
+          event.preventDefault();
+          chooseCourse(input, menu, active.textContent);
+        }
+      } else if (event.key === "Escape") {
+        menu.hidden = true;
+      }
+    });
+    input.addEventListener("blur", function () {
+      setTimeout(function () { menu.hidden = true; }, 180);
+    });
+  }
 }
 
 function fillScheduleEditorDropdowns() {
@@ -336,6 +774,8 @@ function displayResults(results, modeName) {
 
 displayCourseList();
 refreshStudentSelect();
+renderRoster();
+setupCourseCombos();
 </script>
 </body>
 </html>

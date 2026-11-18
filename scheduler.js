@@ -688,7 +688,7 @@
     return students;
   }
 
-  function splitCsvLine(line) {
+  function splitFields(line) {
     var result = [];
     var current = "";
     var inQuotes = false;
@@ -701,7 +701,7 @@
         } else {
           inQuotes = !inQuotes;
         }
-      } else if (char === "," && !inQuotes) {
+      } else if (!inQuotes && (char === "," || char === "\t" || char === ";")) {
         result.push(current.trim());
         current = "";
       } else {
@@ -712,42 +712,252 @@
     return result;
   }
 
-  function exactCourseMap() {
-    var map = {};
-    for (var i = 0; i < allRequestCourses.length; i++) {
-      map[normalizeKey(allRequestCourses[i])] = allRequestCourses[i];
+  function lineHasSeparator(line) {
+    var inQuotes = false;
+    for (var i = 0; i < line.length; i++) {
+      var char = line[i];
+      if (char === '"') inQuotes = !inQuotes;
+      else if (!inQuotes && (char === "," || char === "\t" || char === ";")) return true;
     }
-    return map;
+    return false;
   }
 
-  var courseByKey = exactCourseMap();
+  function foldNumbers(key) {
+    var words = { one: "1", two: "2", three: "3", i: "1", ii: "2", iii: "3" };
+    return String(key || "").split(" ").map(function (token) {
+      return words[token] || token;
+    }).join(" ");
+  }
+
+  function courseKey(text) {
+    return foldNumbers(normalizeKey(text));
+  }
+
+  function levenshtein(a, b) {
+    if (a === b) return 0;
+    if (!a) return b.length;
+    if (!b) return a.length;
+    var prev = new Array(b.length + 1);
+    var curr = new Array(b.length + 1);
+    var i, j;
+    for (j = 0; j <= b.length; j++) prev[j] = j;
+    for (i = 1; i <= a.length; i++) {
+      curr[0] = i;
+      var leftCode = a.charCodeAt(i - 1);
+      for (j = 1; j <= b.length; j++) {
+        var cost = leftCode === b.charCodeAt(j - 1) ? 0 : 1;
+        var del = prev[j] + 1;
+        var ins = curr[j - 1] + 1;
+        var sub = prev[j - 1] + cost;
+        var best = del < ins ? del : ins;
+        curr[j] = best < sub ? best : sub;
+      }
+      var swap = prev;
+      prev = curr;
+      curr = swap;
+    }
+    return prev[b.length];
+  }
+
+  function maxTypoDistance(length) {
+    if (length < 6) return 0;
+    if (length < 12) return 1;
+    return 2;
+  }
+
+  var courseByKey = {};
+  var aliasMap = {};
+  var searchKeys = [];
+
+  function rememberKey(key, course) {
+    if (!key || key.length < 2 || /^[123]$/.test(key)) return;
+    searchKeys.push({ key: key, course: course });
+    if (!aliasMap[key]) aliasMap[key] = [];
+    if (aliasMap[key].indexOf(course) === -1) aliasMap[key].push(course);
+  }
+
+  function addAlias(alias, course) {
+    rememberKey(courseKey(alias), course);
+  }
+
+  function linkLevels(bases, courseForLevel, levels) {
+    for (var n = 0; n < levels.length; n++) {
+      var level = levels[n];
+      var course = courseForLevel(level);
+      var word = level === 1 ? "one" : level === 2 ? "two" : "three";
+      var roman = level === 1 ? "i" : level === 2 ? "ii" : "iii";
+      for (var b = 0; b < bases.length; b++) {
+        addAlias(bases[b], course);
+        addAlias(bases[b] + " " + level, course);
+        addAlias(bases[b] + " " + word, course);
+        addAlias(bases[b] + " " + roman, course);
+      }
+    }
+  }
+
+  (function buildCourseAliases() {
+    for (var i = 0; i < allRequestCourses.length; i++) {
+      var official = allRequestCourses[i];
+      courseByKey[courseKey(official)] = official;
+      rememberKey(courseKey(official), official);
+      var withoutMj = official.replace(/^M\/J\s+/i, "");
+      if (withoutMj !== official) addAlias(withoutMj, official);
+    }
+
+    function numbered(prefix, levels) {
+      var names = {};
+      for (var n = 0; n < levels.length; n++) names[levels[n]] = prefix + " " + levels[n];
+      return function (level) { return names[level]; };
+    }
+
+    linkLevels(["odyssey", "odyssey of the mind", "ootm"], numbered("Odyssey of the Mind", [1, 2, 3]), [1, 2, 3]);
+    linkLevels(["fll", "robotics", "lego", "lego robotics", "first lego", "first lego league robotics"], numbered("FIRST Lego League Robotics", [1, 2, 3]), [1, 2, 3]);
+    linkLevels(["science olympiad", "sci oly", "olympiad"], numbered("Science Olympiad", [1, 2, 3]), [1, 2, 3]);
+    linkLevels(["chess"], numbered("Chess", [1, 2, 3]), [1, 2, 3]);
+    linkLevels(["quiz bowl", "quizbowl", "qb"], numbered("Quiz Bowl", [1, 2, 3]), [1, 2, 3]);
+    linkLevels(["fbla", "future business leaders", "future business leaders of america"], function (level) {
+      return "Advanced Academics, Future Business Leaders of America " + level;
+    }, [1, 2, 3]);
+    linkLevels(["debate", "speech", "speech debate", "speech and debate"], numbered("M/J Speech-Debate", [1, 2, 3]), [1, 2, 3]);
+    linkLevels(["art", "studio art", "2d art", "2 d art", "2d studio art"], numbered("M/J 2-D Studio Art", [1, 2]), [1, 2]);
+    linkLevels(["chorus", "choir"], numbered("M/J Chorus", [1, 2, 3]), [1, 2, 3]);
+    linkLevels(["creative writing", "writing"], numbered("M/J Creative Writing", [1, 2, 3]), [1, 2, 3]);
+    linkLevels(["info tech", "ict", "info and comm tech", "info comm tech"], numbered("Info & Comm Tech", [1, 2]), [1, 2]);
+    linkLevels(["french"], numbered("French", [1, 2]), [1, 2]);
+    linkLevels(["spanish", "span"], numbered("Spanish", [1, 2]), [1, 2]);
+    linkLevels(["photo", "photography", "creative photography"], function () {
+      return "M/J Creative Photography 1";
+    }, [1]);
+    linkLevels(["theatre", "theater", "drama"], function () { return "M/J Theatre 1"; }, [1]);
+    linkLevels(["japanese", "japan"], function () { return "Japanese 1"; }, [1]);
+    addAlias("band", "M/J Instrumental Ensemble");
+    addAlias("instrumental", "M/J Instrumental Ensemble");
+    addAlias("instrumental ensemble", "M/J Instrumental Ensemble");
+    addAlias("orchestra", "M/J Instrumental Ensemble");
+    addAlias("fundamentals", "Fundamentals of Visual & Perf Arts");
+    addAlias("visual arts", "Fundamentals of Visual & Perf Arts");
+    addAlias("perf arts", "Fundamentals of Visual & Perf Arts");
+    addAlias("dit", "Digital Information Technology");
+    addAlias("digital it", "Digital Information Technology");
+    addAlias("digital information technology", "Digital Information Technology");
+    addAlias("app creators", "App Creators/Automation & Robotics");
+    addAlias("apps", "App Creators/Automation & Robotics");
+    addAlias("automation", "App Creators/Automation & Robotics");
+    addAlias("automation and robotics", "App Creators/Automation & Robotics");
+    addAlias("robotics", "App Creators/Automation & Robotics");
+    addAlias("financial literacy", "M/J Intro to Personal Financial Literacy");
+    addAlias("personal finance", "M/J Intro to Personal Financial Literacy");
+    addAlias("finance", "M/J Intro to Personal Financial Literacy");
+    addAlias("personal financial literacy", "M/J Intro to Personal Financial Literacy");
+  })();
+
+  function sortCourseList(list) {
+    var order = {};
+    for (var i = 0; i < allRequestCourses.length; i++) order[allRequestCourses[i]] = i;
+    return list.slice().sort(function (a, b) {
+      return (order[a] || 0) - (order[b] || 0);
+    });
+  }
+
+  function finishCourseMatch(course, typed) {
+    var note = "";
+    if (normalizeKey(typed) !== normalizeKey(course)) {
+      note = 'Read "' + String(typed).trim() + '" as ' + course + ".";
+    }
+    return { ok: true, course: course, note: note };
+  }
+
+  function ambiguousCourseMatch(options, typed) {
+    return { ok: false, kind: "ambiguous", options: sortCourseList(options), typed: typed };
+  }
+
+  function fuzzyCourses(key) {
+    var allowed = maxTypoDistance(key.length);
+    if (!allowed) return { kind: "none" };
+    var stripped = key.replace(/ /g, "");
+    var bestByCourse = {};
+    for (var i = 0; i < searchKeys.length; i++) {
+      var target = searchKeys[i].key;
+      var course = searchKeys[i].course;
+      if (!target || target === key) continue;
+      var targetStripped = target.replace(/ /g, "");
+      if (Math.abs(target.length - key.length) > allowed && Math.abs(targetStripped.length - stripped.length) > allowed) {
+        continue;
+      }
+      var distance = levenshtein(key, target);
+      var strippedDistance = levenshtein(stripped, targetStripped);
+      if (strippedDistance < distance) distance = strippedDistance;
+      if (distance > allowed) continue;
+      if (bestByCourse[course] == null || distance < bestByCourse[course]) bestByCourse[course] = distance;
+    }
+    var courses = Object.keys(bestByCourse);
+    if (!courses.length) return { kind: "none" };
+    courses.sort(function (a, b) {
+      if (bestByCourse[a] !== bestByCourse[b]) return bestByCourse[a] - bestByCourse[b];
+      return compareText(a, b);
+    });
+    var best = bestByCourse[courses[0]];
+    var winners = [];
+    for (var c = 0; c < courses.length; c++) {
+      if (bestByCourse[courses[c]] === best) winners.push(courses[c]);
+    }
+    if (winners.length === 1) return { kind: "one", course: winners[0] };
+    return { kind: "many", courses: sortCourseList(winners) };
+  }
 
   function classifyCourse(input) {
-    var raw = String(input || "").trim();
-    var key = normalizeKey(raw);
-    if (!key) return { ok: true, course: "" };
-    if (courseByKey[key]) return { ok: true, course: courseByKey[key] };
+    var typed = String(input || "").trim();
+    var key = courseKey(typed);
+    if (!key) return { ok: true, course: "", note: "" };
+    if (courseByKey[key]) return finishCourseMatch(courseByKey[key], typed);
 
-    var prefixHits = [];
-    var containsHits = [];
-    for (var i = 0; i < allRequestCourses.length; i++) {
-      var course = allRequestCourses[i];
-      var courseKey = normalizeKey(course);
-      if (courseKey.indexOf(key + " ") === 0) prefixHits.push(course);
-      else if (courseKey.indexOf(key) !== -1) containsHits.push(course);
+    var aliasHits = aliasMap[key] || [];
+    if (aliasHits.length === 1) return finishCourseMatch(aliasHits[0], typed);
+    if (aliasHits.length > 1) return ambiguousCourseMatch(aliasHits, typed);
+
+    if (key.length >= 5) {
+      var contained = [];
+      for (var i = 0; i < allRequestCourses.length; i++) {
+        var official = courseKey(allRequestCourses[i]);
+        if (official.indexOf(key) !== -1) contained.push(allRequestCourses[i]);
+      }
+      if (contained.length === 1) return finishCourseMatch(contained[0], typed);
+      if (contained.length > 1) return ambiguousCourseMatch(contained, typed);
     }
-    if (prefixHits.length >= 2) return { ok: false, kind: "ambiguous", options: prefixHits };
-    if (prefixHits.length === 1) return { ok: false, kind: "unknown", suggestion: prefixHits[0] };
-    if (containsHits.length >= 2) return { ok: false, kind: "ambiguous", options: containsHits };
-    if (containsHits.length === 1) return { ok: false, kind: "unknown", suggestion: containsHits[0] };
-    return { ok: false, kind: "unknown" };
+
+    var fuzzy = fuzzyCourses(key);
+    if (fuzzy.kind === "one") return finishCourseMatch(fuzzy.course, typed);
+    if (fuzzy.kind === "many") return ambiguousCourseMatch(fuzzy.courses, typed);
+    return { ok: false, kind: "unknown", typed: typed };
+  }
+
+  function searchCourses(query) {
+    var key = courseKey(query);
+    if (!key) return allRequestCourses.slice();
+    var seen = {};
+    var found = [];
+    function add(course) {
+      if (course && !seen[course]) {
+        seen[course] = true;
+        found.push(course);
+      }
+    }
+    for (var i = 0; i < allRequestCourses.length; i++) {
+      if (courseKey(allRequestCourses[i]).indexOf(key) !== -1) add(allRequestCourses[i]);
+    }
+    for (var s = 0; s < searchKeys.length; s++) {
+      if (searchKeys[s].key.indexOf(key) !== -1) add(searchKeys[s].course);
+    }
+    return sortCourseList(found);
   }
 
   function parseGrade(value) {
     var key = normalizeKey(value);
     if (!key) return { ok: false };
+    key = key.replace(/^grade /, "").replace(/ grade$/, "");
+    var words = { six: 6, sixth: 6, seven: 7, seventh: 7, eight: 8, eighth: 8 };
+    if (words[key]) return { ok: true, grade: words[key] };
     var match = key.match(/^([0-9]+)(?:st|nd|rd|th)?$/);
-    if (!match) match = key.match(/^grade ([0-9]+)$/);
     if (!match) return { ok: false };
     var grade = Number(match[1]);
     if (grade !== 6 && grade !== 7 && grade !== 8) return { ok: false };
@@ -756,18 +966,152 @@
 
   function parseWaiverStrict(value) {
     var key = normalizeKey(value);
-    if (key === "yes" || key === "y" || key === "waiver" || key === "signed" || key === "true") {
-      return { ok: true, waiver: true };
-    }
-    if (key === "no" || key === "n" || key === "false" || key === "none") {
-      return { ok: true, waiver: false };
-    }
+    if (!key || key === "blank") return { ok: true, waiver: false, blank: true };
+    var yes = { y: 1, yes: 1, yeah: 1, yep: 1, true: 1, "1": 1, waived: 1, waiver: 1, signed: 1 };
+    var no = { n: 1, no: 1, nope: 1, false: 1, "0": 1, none: 1 };
+    if (yes[key]) return { ok: true, waiver: true, blank: false };
+    if (no[key]) return { ok: true, waiver: false, blank: false };
     return { ok: false };
+  }
+
+  function takeCoursePhrases(tokens) {
+    var choices = [];
+    var index = 0;
+    while (index < tokens.length && choices.length < 5) {
+      var found = null;
+      var maxLen = Math.min(8, tokens.length - index);
+      for (var len = maxLen; len >= 1; len--) {
+        var phrase = tokens.slice(index, index + len).join(" ");
+        var match = classifyCourse(phrase);
+        var useful = (match.ok && match.course) || match.kind === "ambiguous";
+        if (useful) {
+          found = { len: len, match: match, typed: phrase };
+          break;
+        }
+      }
+      if (!found) {
+        var token = tokens[index];
+        choices.push({ match: classifyCourse(token), typed: token });
+        index += 1;
+      } else {
+        choices.push(found);
+        index += found.len;
+      }
+    }
+    return choices;
+  }
+
+  function takeCourseFields(fields) {
+    var choices = [];
+    var index = 0;
+    var limited = fields.slice(0, 8);
+    while (index < limited.length && choices.length < 5) {
+      var found = null;
+      var maxLen = Math.min(3, limited.length - index);
+      for (var len = maxLen; len >= 1; len--) {
+        var phrase = limited.slice(index, index + len).join(" ").replace(/\s+/g, " ").trim();
+        var withComma = limited.slice(index, index + len).join(", ").trim();
+        var match = classifyCourse(phrase);
+        var commaMatch = classifyCourse(withComma);
+        var chosen = match;
+        var typed = phrase;
+        if ((!match.ok || !match.course) && ((commaMatch.ok && commaMatch.course) || commaMatch.kind === "ambiguous")) {
+          chosen = commaMatch;
+          typed = withComma;
+        }
+        if ((chosen.ok && chosen.course) || chosen.kind === "ambiguous") {
+          found = { len: len, match: chosen, typed: typed };
+          break;
+        }
+      }
+      if (!found) {
+        choices.push({ match: classifyCourse(limited[index]), typed: limited[index] });
+        index += 1;
+      } else {
+        choices.push(found);
+        index += found.len;
+      }
+    }
+    return choices;
+  }
+
+  function parseLooseLine(line) {
+    var tokens = line.trim().split(/\s+/);
+    var gradeAt = -1;
+    var grade = null;
+    var gradeWidth = 1;
+    for (var i = 0; i < tokens.length; i++) {
+      var two = i + 1 < tokens.length ? parseGrade(tokens[i] + " " + tokens[i + 1]) : null;
+      var one = parseGrade(tokens[i]);
+      if (two && two.ok && normalizeKey(tokens[i]) === "grade") {
+        gradeAt = i;
+        grade = two;
+        gradeWidth = 2;
+        break;
+      }
+      if (one && one.ok && tokens[i + 1] && normalizeKey(tokens[i + 1]) === "grade") {
+        gradeAt = i;
+        grade = one;
+        gradeWidth = 2;
+        break;
+      }
+      if (one && one.ok) {
+        gradeAt = i;
+        grade = one;
+        gradeWidth = 1;
+        break;
+      }
+    }
+    if (gradeAt < 0) {
+      for (var b = 1; b < tokens.length; b++) {
+        var rawGrade = tokens[b];
+        var gradeKey = normalizeKey(rawGrade);
+        if (/^[0-9]/.test(gradeKey) || /^(nine|ninth|five|fifth|ten|tenth)$/.test(gradeKey)) {
+          return { badGrade: true, name: tokens.slice(0, b).join(" "), rawGrade: rawGrade };
+        }
+      }
+      return null;
+    }
+    if (gradeAt === 0 || !grade) return null;
+    var name = tokens.slice(0, gradeAt).join(" ").trim();
+    var rest = tokens.slice(gradeAt + gradeWidth);
+    var waiver = { ok: true, waiver: false, blank: true, assumed: true };
+    if (rest.length && normalizeKey(rest[0]) && parseWaiverStrict(rest[0]).ok) {
+      waiver = parseWaiverStrict(rest[0]);
+      waiver.assumed = false;
+      rest = rest.slice(1);
+    } else if (rest[0] && normalizeKey(rest[0]) === "grade") {
+      rest = rest.slice(1);
+    }
+    return {
+      name: name,
+      grade: grade,
+      waiver: waiver,
+      choices: takeCoursePhrases(rest)
+    };
+  }
+
+  function emptyParse(errors) {
+    return { students: [], errors: errors || [], notes: [], questions: [] };
+  }
+
+  function isHeaderLine(line) {
+    var cells = splitFields(line);
+    if (normalizeKey(cells[0]) === "name") return true;
+    var first = line.trim().split(/\s+/)[0];
+    return normalizeKey(first) === "name";
+  }
+
+  function ambiguousMessage(lineNumber, name, typed, options) {
+    return "Line " + lineNumber + ': "' + typed + '" for ' + name +
+      " matches more than one course (" + options.join(", ") + "). Type the full course name.";
   }
 
   function parseStudentCsv(text) {
     var errors = [];
     var students = [];
+    var notes = [];
+    var questions = [];
     var raw = String(text || "").replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
     var lines = raw.split("\n");
     var rows = [];
@@ -779,29 +1123,74 @@
         line: 0,
         message: "The import box is empty. Add a header and at least one student."
       });
-      return { students: students, errors: errors };
+      return emptyParse(errors);
     }
 
     var start = 0;
-    var firstCells = splitCsvLine(rows[0].line);
-    if (normalizeKey(firstCells[0]) === "name") start = 1;
+    if (isHeaderLine(rows[0].line)) start = 1;
     if (start >= rows.length) {
       errors.push({
         line: rows[0].number,
         message: "Add at least one student row under the header."
       });
-      return { students: students, errors: errors };
+      return emptyParse(errors);
     }
 
     var acceptedNames = {};
     for (var r = start; r < rows.length; r++) {
       var row = rows[r];
-      var cells = splitCsvLine(row.line);
-      var name = cells.length > 0 ? String(cells[0] || "").trim() : "";
-      var gradeCell = cells.length > 1 ? cells[1] : "";
-      var waiverCell = cells.length > 2 ? cells[2] : "";
+      var name = "";
+      var gradeParsed = null;
+      var waiverParsed = null;
+      var choiceItems = [];
+      var waiverNote = "";
 
-      if (!name || cells.length < 3 || String(gradeCell).trim() === "" || String(waiverCell).trim() === "") {
+      if (!lineHasSeparator(row.line)) {
+        var loose = parseLooseLine(row.line);
+        if (!loose) {
+          errors.push({
+            line: row.number,
+            message: "Line " + row.number + ": This row is missing a name, grade, or PE waiver. Every student needs all three."
+          });
+          continue;
+        }
+        if (loose.badGrade) {
+          errors.push({
+            line: row.number,
+            message: "Line " + row.number + ': Grade "' + loose.rawGrade + '" is not supported for ' + loose.name + ". Use 6, 7, or 8."
+          });
+          continue;
+        }
+        name = loose.name;
+        gradeParsed = loose.grade;
+        waiverParsed = loose.waiver;
+        choiceItems = loose.choices;
+        if (waiverParsed.assumed) {
+          waiverNote = "No PE waiver was written for " + name + ", so this student still takes PE.";
+        }
+      } else {
+        var cells = splitFields(row.line);
+        name = cells.length > 0 ? String(cells[0] || "").trim() : "";
+        var gradeCell = cells.length > 1 ? cells[1] : "";
+        var waiverCell = cells.length > 2 ? cells[2] : "";
+        if (!name || cells.length < 3 || String(gradeCell).trim() === "") {
+          errors.push({
+            line: row.number,
+            message: "Line " + row.number + ": This row is missing a name, grade, or PE waiver. Every student needs all three."
+          });
+          continue;
+        }
+        gradeParsed = parseGrade(gradeCell);
+        if (!String(waiverCell).trim()) {
+          waiverParsed = { ok: true, waiver: false, blank: true };
+          waiverNote = "Read a blank PE waiver for " + name + " as No.";
+        } else {
+          waiverParsed = parseWaiverStrict(waiverCell);
+        }
+        choiceItems = takeCourseFields(cells.slice(3));
+      }
+
+      if (!name) {
         errors.push({
           line: row.number,
           message: "Line " + row.number + ": This row is missing a name, grade, or PE waiver. Every student needs all three."
@@ -818,75 +1207,137 @@
         continue;
       }
 
-      var gradeParsed = parseGrade(gradeCell);
-      if (!gradeParsed.ok) {
+      if (!gradeParsed || !gradeParsed.ok) {
         errors.push({
           line: row.number,
-          message: "Line " + row.number + ': Grade "' + String(gradeCell).trim() + '" is not supported for ' + name + ". Use 6, 7, or 8."
+          message: "Line " + row.number + ': Grade "' + String(lineHasSeparator(row.line) ? splitFields(row.line)[1] : "").trim() + '" is not supported for ' + name + ". Use 6, 7, or 8."
         });
         continue;
       }
 
-      var waiverParsed = parseWaiverStrict(waiverCell);
-      if (!waiverParsed.ok) {
+      if (!waiverParsed || !waiverParsed.ok) {
+        var waiverText = lineHasSeparator(row.line) ? splitFields(row.line)[2] : "";
         errors.push({
           line: row.number,
-          message: "Line " + row.number + ': PE Waiver for ' + name + ' must be Yes or No, not "' + String(waiverCell).trim() + '".'
+          message: "Line " + row.number + ': PE Waiver for ' + name + ' must be Yes or No, not "' + String(waiverText || "").trim() + '".'
         });
         continue;
       }
 
-      var rankings = [];
-      var seenChoices = {};
-      var choicesOk = true;
-      var choiceCells = cells.slice(3, 8);
-      for (var c = 0; c < choiceCells.length; c++) {
-        var rawChoice = String(choiceCells[c] || "").trim();
-        if (!rawChoice) continue;
-        var match = classifyCourse(rawChoice);
-        if (!match.ok) {
-          choicesOk = false;
-          if (match.kind === "ambiguous") {
-            errors.push({
-              line: row.number,
-              message: "Line " + row.number + ': "' + rawChoice + '" for ' + name + " matches more than one course (" + match.options.join(", ") + "). Type the full course name."
-            });
-          } else if (match.suggestion) {
-            errors.push({
-              line: row.number,
-              message: "Line " + row.number + ': Unknown course "' + rawChoice + '" for ' + name + '. Did you mean "' + match.suggestion + '"? The importer will not guess.'
-            });
-          } else {
-            errors.push({
-              line: row.number,
-              message: "Line " + row.number + ': Unknown course "' + rawChoice + '" for ' + name + ". Check the spelling against the course list."
-            });
-          }
+      var resolved = [];
+      var pending = [];
+      var rowNotes = [];
+      var hard = false;
+      if (waiverNote) rowNotes.push(waiverNote);
+      for (var c = 0; c < choiceItems.length; c++) {
+        var item = choiceItems[c];
+        var match = item.match;
+        if (!match || (match.ok && !match.course)) continue;
+        if (match.kind === "ambiguous") {
+          pending.push({ typed: item.typed, options: match.options.slice() });
           continue;
         }
-        if (seenChoices[match.course]) {
-          choicesOk = false;
+        if (!match.ok) {
+          hard = true;
+          errors.push({
+            line: row.number,
+            message: "Line " + row.number + ': Unknown course "' + item.typed + '" for ' + name + ". Check the spelling against the course list."
+          });
+          continue;
+        }
+        if (resolved.indexOf(match.course) !== -1) {
+          hard = true;
           errors.push({
             line: row.number,
             message: "Line " + row.number + ': "' + match.course + '" is listed more than once for ' + name + "."
           });
           continue;
         }
-        seenChoices[match.course] = true;
-        rankings.push(match.course);
+        resolved.push(match.course);
+        if (match.note) rowNotes.push(match.note);
       }
-      if (!choicesOk) continue;
+      if (hard) continue;
 
+      if (pending.length) {
+        var question = {
+          id: "line-" + row.number,
+          line: row.number,
+          name: name,
+          grade: gradeParsed.grade,
+          peWaiver: waiverParsed.waiver,
+          resolved: resolved,
+          pending: pending,
+          notes: rowNotes
+        };
+        questions.push(question);
+        for (var p = 0; p < pending.length; p++) {
+          errors.push({
+            line: row.number,
+            questionId: question.id,
+            message: ambiguousMessage(row.number, name, pending[p].typed, pending[p].options)
+          });
+        }
+        acceptedNames[nameKey] = row.number;
+        continue;
+      }
+
+      for (var n = 0; n < rowNotes.length; n++) {
+        notes.push({ line: row.number, message: rowNotes[n] });
+      }
       acceptedNames[nameKey] = row.number;
       students.push({
         name: name,
         grade: gradeParsed.grade,
         peWaiver: waiverParsed.waiver,
-        rankings: rankings
+        rankings: resolved
       });
     }
 
-    return { students: students, errors: errors };
+    return { students: students, errors: errors, notes: notes, questions: questions };
+  }
+
+  function answerImportQuestion(question, course) {
+    if (!question || !question.pending || !question.pending.length) {
+      return { ok: false, error: "Nothing left to choose." };
+    }
+    var problem = question.pending[0];
+    var options = problem.options || [];
+    if (options.indexOf(course) === -1) {
+      return { ok: false, error: "That is not one of the choices." };
+    }
+    var resolved = (question.resolved || []).slice();
+    if (resolved.indexOf(course) !== -1) {
+      return { ok: false, error: course + " is already one of this student's choices." };
+    }
+    resolved.push(course);
+    var pending = question.pending.slice(1);
+    var notes = (question.notes || []).slice();
+    notes.push('Read "' + problem.typed + '" as ' + course + ".");
+    var updated = {
+      id: question.id,
+      line: question.line,
+      name: question.name,
+      grade: question.grade,
+      peWaiver: question.peWaiver,
+      resolved: resolved,
+      pending: pending,
+      notes: notes
+    };
+    if (pending.length === 0) {
+      return {
+        ok: true,
+        done: true,
+        student: {
+          name: question.name,
+          grade: question.grade,
+          peWaiver: question.peWaiver,
+          rankings: resolved
+        },
+        notes: notes,
+        question: updated
+      };
+    }
+    return { ok: true, done: false, question: updated, notes: notes };
   }
 
   function formatImportReport(errors, importedCount) {
@@ -1187,6 +1638,8 @@
     buildStudentSchedule: buildStudentSchedule,
     createDemoStudents: createDemoStudents,
     parseStudentCsv: parseStudentCsv,
+    answerImportQuestion: answerImportQuestion,
+    searchCourses: searchCourses,
     formatImportReport: formatImportReport,
     applyManualOverride: applyManualOverride,
     createScheduleHtml: createScheduleHtml,

@@ -23,11 +23,12 @@ You need Node.js. You do not need to install packages.
 
 ## Open the page
 
-Open `index.html` in a browser. The buttons do the same work the tests call:
+Open `index.html` in a browser.
 
-1. **Generate 10 Student Schedules** builds the same ten demo students every time.
-2. **Generate Imported Schedules** reads the box of comma-separated rows.
-3. **Save Manual Schedule Override** edits one student after a schedule exists.
+1. **Add a Student** is the normal way. Type a name, choose a grade, and pick up to five electives. The elective boxes filter the real course list as you type, so you pick a name instead of spelling it. Added students show in a list. Edit or Remove changes that list. **Make schedules for these students** builds the schedules.
+2. **Paste a List** is for many students at once. You can type in normal words. `Ava Brooks 7th no span one art 1` is enough. Commas, tabs, and extra spaces are fine, and a header row is optional.
+3. **Generate 10 Student Schedules** builds the same ten demo students every time.
+4. **Save Manual Schedule Override** edits one student after a schedule exists.
 
 Refreshing the page clears the results.
 
@@ -59,13 +60,20 @@ Class sizes are set at the top of `scheduler.js` in `SCHEDULE_DEFAULTS`. With th
 
 Elective sections are smaller, about 12 to 28 seats. Competition courses are the smaller ones.
 
-## CSV import
+## Adding students
 
-Each row needs a name, a grade (6, 7, or 8), and a PE waiver (`Yes` or `No`), then up to five choices.
+Use the form when you are typing one student at a time. The course boxes only accept a course from the list.
 
-The course text must match a course on the list (capital letters and extra spaces do not matter). `Quiz Bowl` is not silently turned into `Quiz Bowl 1`. The page lists the problem instead. Unknown courses, bad grades, missing fields, and duplicate names are reported the same way. Rows with problems are skipped. Valid rows are still scheduled.
+Use the paste box when you already have a list. It is forgiving:
 
-Names from the file are escaped before they are shown, so a name cannot turn into HTML.
+- Capital letters, spaces, and punctuation do not have to match. `span one`, `Span 1`, and `span I` all mean Spanish 1.
+- Short names work when they are clear: `FLL 1`, `robotics 2`, `info tech 1`, `photo 1`, `art 1`, `debate 1`.
+- Grades can look like `7`, `7th`, `seventh`, or `grade 7`.
+- PE waiver can be yes, yeah, yep, true, 1, or waived. No, nope, false, 0, blank, or an empty waiver means the student still takes PE.
+- A small typo can still match. The page tells you what it did, for example: Read "span one" as Spanish 1.
+- If a name could be two courses, such as Quiz Bowl with no level, the page does not guess. It shows **Did you mean…?** with a button for each course. Click the right one and that student is added. You do not have to paste the list again.
+
+A missing name, a grade that is not 6, 7, or 8, or a course that is not close to anything on the list is reported and skipped. Duplicate names are reported too. Student names are escaped before they are shown, so a name cannot turn into HTML.
 
 ## Manual override
 
