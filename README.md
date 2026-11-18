@@ -62,7 +62,7 @@ Elective sections are smaller, about 12 to 28 seats. Competition courses are the
 
 ## Adding students
 
-Use the form when you are typing one student at a time. The course boxes only accept a course from the list.
+Use the form when you are typing one student at a time. The course boxes only accept a course from the list. If you already picked Spanish, Spanish 2 is greyed out and the menu says why. A class with no seats left is greyed out too.
 
 Use the paste box when you already have a list. It is forgiving:
 
@@ -84,6 +84,10 @@ After schedules exist, the override form can change one student. It still blocks
 - putting a student into a section that is already full, or into a period where that course does not meet
 
 A 6th grader may be moved into a 7th or 8th grade section when a seat is open. Saving gives back the old seat and takes the new one.
+
+In the manual editor, a class that would repeat a subject, fill a full section, book a teacher who is already teaching, or drop Math, ELA, History, Science, or PE is greyed out. The menu gives a short reason.
+
+If a student still cannot be fully scheduled, or a save would break a rule, the page shows two to four fixes. Each button is already checked against the rules. One click applies it. Examples: move a class to a period with open seats, give the student a later choice that fits, swap two periods, or keep the schedule partial and flag it for an admin.
 
 ## What this demo does not do
 

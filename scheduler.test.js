@@ -676,6 +676,123 @@ test("demo students are stable and fully scheduled", () => {
   assert.ok(!periodCourses(mia).some(course => course && / PE$/.test(course)));
 });
 
+function assertFixKeepsHardRules(beforeSections, afterResult, afterSections) {
+  const families = new Set();
+  const sectionIds = new Set();
+  for (let period = 1; period <= 7; period++) {
+    const item = afterResult.schedule[period];
+    if (!item) continue;
+    const family = ss.subjectFamily(item.course);
+    assert.equal(families.has(family), false, item.course + " repeats " + family);
+    families.add(family);
+    assert.equal(sectionIds.has(item.sectionId), false);
+    sectionIds.add(item.sectionId);
+    const section = findSection(afterSections, item.sectionId);
+    assert.ok(section, "missing section " + item.sectionId);
+    assert.equal(section.course, item.course);
+    assert.equal(Number(section.period), period);
+    assert.equal(section.teacher, item.teacher);
+  }
+  for (const list of Object.values(afterSections)) {
+    for (const section of list) {
+      assert.ok(section.seats >= 0 && section.seats <= section.capacity, section.id);
+      const before = findSection(beforeSections, section.id);
+      assert.ok(Math.abs(before.seats - section.seats) <= 2);
+    }
+  }
+  assertTeacherPeriodsUnique(afterSections);
+}
+
+test("dropdowns block duplicate subjects, full classes, and teacher conflicts", () => {
+  assert.equal(ss.choiceBlockReason("French 1", ["Spanish 1"]), "");
+  assert.match(ss.choiceBlockReason("Spanish 2", ["Spanish 1"]), /Already have Spanish/);
+  assert.match(ss.choiceBlockReason("Spanish 1", ["Spanish 1"]), /Already picked/);
+
+  const built = ss.buildMasterSchedule(ss.defaultTeacherNames());
+  built.sections["French 1"].forEach(section => { section.seats = 0; });
+  assert.match(ss.choiceBlockReason("French 1", [], built.sections), /No seats left/);
+  assert.equal(ss.choiceBlockReason("French 1", [], built.sections, ["French 1"]), "");
+
+  const chessPeriod = built.sections["Chess 1"][0].period;
+  const student = { name: "Pat", grade: 7, peWaiver: false, rankings: [] };
+  const proposed = {};
+  const cores = ["7 Math", "7 ELA", "7 History", "7 Science", "7 PE", "Spanish 1"];
+  let coreIndex = 0;
+  for (let period = 1; period <= 7; period++) {
+    proposed[period] = period === chessPeriod ? "Japanese 1" : cores[coreIndex++];
+  }
+  const teacherReason = ss.periodBlockReason("Chess 2", chessPeriod, student, proposed, built.sections, {});
+  assert.match(teacherReason, /already teaches/);
+
+  proposed[chessPeriod === 7 ? 6 : 7] = "Spanish 1";
+  const duplicateReason = ss.periodBlockReason("Spanish 2", chessPeriod, student, proposed, built.sections, {});
+  assert.match(duplicateReason, /Already have Spanish/);
+
+  const fullPeriod = built.sections["Japanese 1"][0].period;
+  built.sections["Japanese 1"].forEach(section => {
+    if (section.period === fullPeriod) section.seats = 0;
+  });
+  const saved = {};
+  for (let period = 1; period <= 7; period++) saved[period] = null;
+  const fullReason = ss.periodBlockReason("Japanese 1", fullPeriod, student, proposed, built.sections, saved);
+  assert.match(fullReason, /No seats left|already teaches|Not offered|Already have|Can't drop/);
+});
+
+test("fix suggestions never produce an invalid schedule", () => {
+  function tryAll(result, sections, proposal) {
+    const beforeSchedule = JSON.stringify(result.schedule);
+    const suggestions = ss.suggestFixes(result, sections, proposal);
+    assert.equal(JSON.stringify(result.schedule), beforeSchedule);
+    assert.ok(suggestions.length >= 2 && suggestions.length <= 4, suggestions.map(item => item.label).join(" | "));
+    const labels = new Set(suggestions.map(item => item.label));
+    assert.equal(labels.size, suggestions.length);
+    for (const suggestion of suggestions) {
+      const trial = JSON.parse(JSON.stringify(result));
+      const trialSections = JSON.parse(JSON.stringify(sections));
+      const outcome = ss.applySuggestion(trial, trialSections, suggestion);
+      assert.equal(outcome.ok, true, suggestion.label + " " + (outcome.error || ""));
+      assertFixKeepsHardRules(sections, trial, trialSections);
+      if (suggestion.kind === "flag") {
+        assert.equal(trial.flaggedForAdmin, true);
+        assert.match(trial.notes.join(" "), /Flagged for an admin/);
+      }
+    }
+  }
+
+  const output = ss.generateSchedules([{
+    name: "Partial Pat",
+    grade: 6,
+    peWaiver: false,
+    rankings: ["Spanish 1", "M/J Chorus 1", "M/J Theatre 1", "Japanese 1", "French 1"]
+  }]);
+  const result = output.results[0];
+  let mathPeriod = 0;
+  for (let period = 1; period <= 7; period++) {
+    if (result.schedule[period] && result.schedule[period].course === "6 Math") mathPeriod = period;
+  }
+  result.schedule[mathPeriod] = null;
+  output.sections["6 Math"].forEach(section => { section.seats = 0; });
+  result.complete = false;
+  result.notes = ["Missing required class: 6 Math.", "Period " + mathPeriod + " has no class."];
+  tryAll(result, output.sections);
+
+  const healthy = ss.generateSchedules([{
+    name: "Full Fran",
+    grade: 8,
+    peWaiver: true,
+    rankings: ["Spanish 1", "M/J Chorus 1", "Chess 1"]
+  }]);
+  const proposal = {};
+  let electivePeriod = 0;
+  for (let period = 1; period <= 7; period++) {
+    proposal[period] = healthy.results[0].schedule[period].course;
+    if (!/^[678] (Math|ELA|History|Science|PE)$/.test(proposal[period])) electivePeriod = period;
+  }
+  proposal[electivePeriod] = "";
+  tryAll(healthy.results[0], healthy.sections, proposal);
+  assert.equal(healthy.results[0].complete, true);
+});
+
 test("the page loads the scheduler file and does not shuffle with Math.random", () => {
   const html = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
   const scheduler = fs.readFileSync(path.join(__dirname, "scheduler.js"), "utf8");

@@ -39,6 +39,9 @@ th{background:#e0ecff;color:#0f172a}
 .combo-menu{position:absolute;z-index:30;left:0;right:0;top:calc(100% + 4px);background:#fff;border:1px solid #cbd5e1;border-radius:10px;max-height:220px;overflow:auto;box-shadow:0 8px 22px rgba(15,23,42,.12)}
 button.combo-option{display:block;width:100%;margin:0;border-radius:0;background:#fff;color:#1f2937;font-weight:normal;text-align:left}
 button.combo-option:hover,button.combo-option[data-active="true"]{background:#eff6ff;color:#1e3a8a}
+button.combo-option[disabled]{background:#f8fafc;color:#94a3b8;cursor:not-allowed}
+button.combo-option[disabled]:hover{background:#f8fafc;color:#94a3b8}
+button.combo-option small{display:block;font-size:12px;font-weight:normal;color:#64748b}
 footer{text-align:center;padding:30px;color:#64748b;font-size:13px}
 @media(max-width:900px){.grid-2,.grid-3,.grid-4{grid-template-columns:1fr}header h1{font-size:34px}nav a{display:inline-block;margin:6px}}
 </style>
@@ -128,7 +131,7 @@ footer{text-align:center;padding:30px;color:#64748b;font-size:13px}
 <section id="roster">
 <div class="card">
 <h2>Add a Student</h2>
-<p>This is the easiest way to add someone. Type their name, pick a grade, and choose electives from the list. The list filters as you type, so a course name cannot be misspelled.</p>
+<p>This is the easiest way to add someone. Type their name, pick a grade, and choose electives from the list. The list filters as you type, so a course name cannot be misspelled. A course you already picked, or another level of the same subject, is greyed out.</p>
 <div id="studentFormMessage"></div>
 <div class="grid grid-2">
 <div>
@@ -185,7 +188,7 @@ Student C,8,Yes,"M/J Speech-Debate 1","M/J Creative Photography 1","French 1","M
 <section id="editor">
 <div class="card">
 <h2>Manual Schedule Override</h2>
-<p>This is for outlier students. It changes the assigned schedule, not the student’s original requests. It blocks duplicate subjects, removing a required class, and classes that are already full. Cross-grade placement is still allowed, and seat counts update when a change is saved.</p>
+<p>This is for outlier students. It changes the assigned schedule, not the student’s original requests. Greyed-out classes cannot be picked, and the menu says why: same subject twice, a full class, a teacher who is already teaching, or dropping a required class. Cross-grade placement is still allowed when a seat is open.</p>
 
 <label>Select Student</label>
 <select id="studentSelect" onchange="loadScheduleEditor()">
@@ -351,8 +354,15 @@ function saveRosterStudent() {
       return;
     }
     if (!choice) continue;
-    if (rankings.indexOf(choice) !== -1) {
-      formMessage("warning", choice + " is listed twice. Each choice should be a different course.");
+    var family = SmartSchedule.subjectFamily(choice);
+    var familyTaken = rankings.some(function (picked) { return SmartSchedule.subjectFamily(picked) === family; });
+    if (familyTaken) {
+      formMessage("warning", "You already picked " + family + ". Choose a different subject.");
+      return;
+    }
+    var blocked = SmartSchedule.choiceBlockReason(choice, rankings, currentSections);
+    if (blocked) {
+      formMessage("warning", choice + " cannot be picked. " + blocked + ".");
       return;
     }
     rankings.push(choice);
@@ -609,7 +619,19 @@ function closeComboMenus(except) {
   }
 }
 
+function coursesAlreadyChosen(exceptInput) {
+  const chosen = [];
+  for (let index = 1; index <= 5; index++) {
+    const input = choiceInput(index);
+    if (input === exceptInput) continue;
+    if (input.dataset.course && input.value === input.dataset.course) chosen.push(input.dataset.course);
+  }
+  return chosen;
+}
+
 function chooseCourse(input, menu, course) {
+  const reason = SmartSchedule.choiceBlockReason(course, coursesAlreadyChosen(input), currentSections);
+  if (reason) return;
   input.value = course;
   input.dataset.course = course;
   menu.hidden = true;
@@ -617,7 +639,16 @@ function chooseCourse(input, menu, course) {
 
 function showCourseMatches(input, menu, query) {
   const matches = SmartSchedule.searchCourses(query);
-  const shown = query.trim() ? matches.slice(0, 8) : matches;
+  const chosen = coursesAlreadyChosen(input);
+  const annotated = matches.map(function (course) {
+    return { course: course, reason: SmartSchedule.choiceBlockReason(course, chosen, currentSections) };
+  });
+  annotated.sort(function (a, b) {
+    if (!a.reason && b.reason) return -1;
+    if (a.reason && !b.reason) return 1;
+    return 0;
+  });
+  const shown = query.trim() ? annotated.slice(0, 8) : annotated.slice(0, 12);
   menu.innerHTML = "";
   if (shown.length === 0) {
     const empty = document.createElement("div");
@@ -628,15 +659,28 @@ function showCourseMatches(input, menu, query) {
     menu.hidden = false;
     return;
   }
-  shown.forEach(function (course, index) {
+  var activated = false;
+  shown.forEach(function (item) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "combo-option";
-    button.textContent = course;
-    if (index === 0) button.setAttribute("data-active", "true");
+    button.dataset.course = item.course;
+    const name = document.createElement("span");
+    name.textContent = item.course;
+    button.appendChild(name);
+    if (item.reason) {
+      button.disabled = true;
+      const why = document.createElement("small");
+      why.textContent = item.reason;
+      button.appendChild(why);
+    } else if (!activated) {
+      button.setAttribute("data-active", "true");
+      activated = true;
+    }
     button.addEventListener("mousedown", function (event) {
       event.preventDefault();
-      chooseCourse(input, menu, course);
+      if (button.disabled) return;
+      chooseCourse(input, menu, item.course);
     });
     menu.appendChild(button);
   });
@@ -644,11 +688,13 @@ function showCourseMatches(input, menu, query) {
 }
 
 function moveComboSelection(menu, direction) {
-  const buttons = Array.prototype.slice.call(menu.querySelectorAll("button"));
+  const buttons = Array.prototype.slice.call(menu.querySelectorAll("button")).filter(function (button) {
+    return !button.disabled;
+  });
   if (buttons.length === 0) return;
   let current = buttons.findIndex(function (button) { return button.getAttribute("data-active") === "true"; });
   if (current === -1) current = 0;
-  buttons[current].removeAttribute("data-active");
+  buttons.forEach(function (button) { button.removeAttribute("data-active"); });
   const next = (current + direction + buttons.length) % buttons.length;
   buttons[next].setAttribute("data-active", "true");
   buttons[next].scrollIntoView({ block: "nearest" });
@@ -673,9 +719,9 @@ function setupCourseCombos() {
         moveComboSelection(menu, -1);
       } else if (event.key === "Enter") {
         const active = menu.querySelector("button[data-active='true']");
-        if (active && !menu.hidden) {
+        if (active && !active.disabled && !menu.hidden) {
           event.preventDefault();
-          chooseCourse(input, menu, active.textContent);
+          chooseCourse(input, menu, active.dataset.course);
         }
       } else if (event.key === "Escape") {
         menu.hidden = true;
@@ -687,20 +733,46 @@ function setupCourseCombos() {
   }
 }
 
-function fillScheduleEditorDropdowns() {
-  const options = SmartSchedule.allScheduleOptions();
+let renderingOverride = false;
+
+function renderOverrideDropdowns(fromSchedule) {
+  if (currentResults.length === 0 || renderingOverride) return;
+  const index = Number(document.getElementById("studentSelect").value);
+  const result = currentResults[index];
+  if (!result || !currentSections) return;
+  renderingOverride = true;
+  const proposed = {};
   for (let period = 1; period <= 7; period++) {
     const sel = document.getElementById("period" + period);
+    if (fromSchedule) proposed[period] = result.schedule[period] ? result.schedule[period].course : "";
+    else proposed[period] = sel.value;
+  }
+  for (let period = 1; period <= 7; period++) {
+    const sel = document.getElementById("period" + period);
+    const options = SmartSchedule.periodOptions(period, result.student, proposed, currentSections, result.schedule);
+    const keep = proposed[period];
     sel.innerHTML = "";
     const blank = document.createElement("option");
     blank.value = "";
     blank.textContent = "Choose a class";
     sel.appendChild(blank);
-    options.forEach(function (course) {
+    options.forEach(function (item) {
       const opt = document.createElement("option");
-      opt.value = course;
-      opt.textContent = course;
+      opt.value = item.course;
+      opt.textContent = item.enabled ? item.course : item.course + " — " + item.reason;
+      opt.disabled = !item.enabled;
       sel.appendChild(opt);
+    });
+    const allowed = options.some(function (item) { return item.course === keep && item.enabled; });
+    sel.value = allowed ? keep : "";
+  }
+  renderingOverride = false;
+}
+
+function setupOverrideDropdowns() {
+  for (let period = 1; period <= 7; period++) {
+    document.getElementById("period" + period).addEventListener("change", function () {
+      renderOverrideDropdowns(false);
     });
   }
 }
@@ -732,14 +804,9 @@ function refreshStudentSelect(preferredIndex) {
 
 function loadScheduleEditor() {
   if (currentResults.length === 0) return;
-  fillScheduleEditorDropdowns();
   const index = Number(document.getElementById("studentSelect").value);
   if (!Number.isInteger(index) || !currentResults[index]) return;
-  const result = currentResults[index];
-  for (let period = 1; period <= 7; period++) {
-    const item = result.schedule[period];
-    document.getElementById("period" + period).value = item && item.course ? item.course : "";
-  }
+  renderOverrideDropdowns(true);
 }
 
 function saveScheduleOverride() {
@@ -754,7 +821,26 @@ function saveScheduleOverride() {
   const outcome = SmartSchedule.applyManualOverride(result, coursesByPeriod, currentSections);
   const message = document.getElementById("editMessage");
   if (!outcome.ok) {
+    const suggestions = SmartSchedule.suggestFixes(result, currentSections, coursesByPeriod);
     message.innerHTML = "<div class='warning'><strong>Cannot save:</strong> " + SmartSchedule.escapeHtml(outcome.error) + "</div>";
+    if (suggestions.length) {
+      const box = document.createElement("div");
+      box.className = "note";
+      const title = document.createElement("strong");
+      title.textContent = "Try a fix:";
+      box.appendChild(title);
+      suggestions.forEach(function (suggestion) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "secondary";
+        button.textContent = suggestion.label;
+        button.addEventListener("click", function () {
+          applyFix(result, suggestion);
+        });
+        box.appendChild(button);
+      });
+      message.appendChild(box);
+    }
     return;
   }
   displayResults(currentResults, "Manual Schedule Override Saved");
@@ -762,13 +848,45 @@ function saveScheduleOverride() {
   message.innerHTML = "<div class='success'>Manual override saved. Cross-grade placement is allowed. Required classes stay on the schedule, duplicate subjects are blocked, and full classes are blocked. Seat counts were updated.</div>";
 }
 
+function applyFix(result, suggestion) {
+  const outcome = SmartSchedule.applySuggestion(result, currentSections, suggestion);
+  const message = document.getElementById("editMessage");
+  if (!outcome.ok) {
+    message.innerHTML = "<div class='warning'><strong>Could not apply that fix:</strong> " + SmartSchedule.escapeHtml(outcome.error || "It would break a rule.") + "</div>";
+    return;
+  }
+  const index = currentResults.indexOf(result);
+  displayResults(currentResults, suggestion.kind === "flag" ? "Flagged for admin" : "Fix applied");
+  refreshStudentSelect(index);
+  message.innerHTML = "<div class='success'>" + SmartSchedule.escapeHtml(suggestion.label) + ".</div>";
+}
+
+function bindFixButtons() {
+  const buttons = document.querySelectorAll(".fix-suggestion");
+  for (let i = 0; i < buttons.length; i++) {
+    buttons[i].addEventListener("click", function () {
+      const index = Number(buttons[i].getAttribute("data-result-index"));
+      const fixId = buttons[i].getAttribute("data-fix-id");
+      const result = currentResults[index];
+      if (!result) return;
+      const suggestion = (result.suggestions || []).find(function (item) { return item.id === fixId; });
+      if (suggestion) applyFix(result, suggestion);
+    });
+  }
+}
+
 function displayResults(results, modeName) {
+  results.forEach(function (result, index) {
+    result._index = index;
+    result.suggestions = currentSections ? SmartSchedule.suggestFixes(result, currentSections) : [];
+  });
   document.getElementById("summaryOutput").innerHTML = SmartSchedule.createSummaryHtml(results, modeName, scheduleWarnings);
   let html = "";
   results.forEach(function (result) {
     html += SmartSchedule.createScheduleHtml(result);
   });
   document.getElementById("resultsOutput").innerHTML = html;
+  bindFixButtons();
   document.getElementById("results").scrollIntoView({ behavior: "smooth" });
 }
 
@@ -776,6 +894,7 @@ displayCourseList();
 refreshStudentSelect();
 renderRoster();
 setupCourseCombos();
+setupOverrideDropdowns();
 </script>
 </body>
 </html>

@@ -1518,6 +1518,423 @@
     return { ok: true };
   }
 
+  function copySchedule(schedule) {
+    var copy = {};
+    for (var period = 1; period <= 7; period++) {
+      var item = schedule ? schedule[period] : null;
+      copy[period] = item ? { course: item.course, teacher: item.teacher, sectionId: item.sectionId } : null;
+    }
+    return copy;
+  }
+
+  function scheduleHasCourse(schedule, course) {
+    for (var period = 1; period <= 7; period++) {
+      if (schedule[period] && schedule[period].course === course) return true;
+    }
+    return false;
+  }
+
+  function familiesUnique(schedule) {
+    var seen = {};
+    for (var period = 1; period <= 7; period++) {
+      if (!schedule[period]) continue;
+      var family = subjectFamily(schedule[period].course);
+      if (seen[family]) return false;
+      seen[family] = true;
+    }
+    return true;
+  }
+
+  function requiredPreserved(student, before, after) {
+    var needed = requiredFamilies(student);
+    for (var i = 0; i < needed.length; i++) {
+      if (scheduleHasFamily(before, needed[i]) && !scheduleHasFamily(after, needed[i])) return false;
+    }
+    return true;
+  }
+
+  function seatsInBounds(sections) {
+    var courses = Object.keys(sections || {});
+    for (var i = 0; i < courses.length; i++) {
+      var list = sections[courses[i]];
+      for (var s = 0; s < list.length; s++) {
+        if (list[s].seats < 0 || list[s].seats > list[s].capacity) return false;
+      }
+    }
+    return true;
+  }
+
+  function findTeacherSection(sections, teacher, period) {
+    var courses = Object.keys(sections || {});
+    for (var i = 0; i < courses.length; i++) {
+      var list = sections[courses[i]];
+      for (var s = 0; s < list.length; s++) {
+        if (list[s].teacher === teacher && Number(list[s].period) === Number(period)) return list[s];
+      }
+    }
+    return null;
+  }
+
+  function openSeatsInPeriod(sections, course, period) {
+    var list = sections && sections[course] ? sections[course] : [];
+    var total = 0;
+    for (var i = 0; i < list.length; i++) {
+      if (Number(list[i].period) === Number(period)) total += list[i].seats;
+    }
+    return total;
+  }
+
+  function choiceBlockReason(course, takenCourses, sections, heldCourses) {
+    var taken = takenCourses || [];
+    var held = {};
+    for (var h = 0; h < (heldCourses || []).length; h++) held[heldCourses[h]] = true;
+    var family = subjectFamily(course);
+    for (var i = 0; i < taken.length; i++) {
+      if (taken[i] === course) return "Already picked";
+      if (subjectFamily(taken[i]) === family) return "Already have " + family;
+    }
+    if (sections && sections[course] && !held[course]) {
+      var open = false;
+      for (var s = 0; s < sections[course].length; s++) {
+        if (sections[course][s].seats > 0) open = true;
+      }
+      if (!open) return "No seats left";
+    }
+    return "";
+  }
+
+  function periodBlockReason(course, period, student, proposed, sections, savedSchedule) {
+    var others = [];
+    for (var p = 1; p <= 7; p++) {
+      if (p === Number(period)) continue;
+      if (proposed && proposed[p]) others.push({ period: p, course: proposed[p] });
+    }
+    var family = subjectFamily(course);
+    for (var i = 0; i < others.length; i++) {
+      if (subjectFamily(others[i].course) === family) {
+        return "Already have " + family + " in Period " + others[i].period;
+      }
+    }
+    var present = {};
+    present[family] = true;
+    for (var o = 0; o < others.length; o++) present[subjectFamily(others[o].course)] = true;
+    var needed = requiredFamilies(student || { peWaiver: false });
+    for (var n = 0; n < needed.length; n++) {
+      if (!present[needed[n]]) return "Can't drop " + needed[n];
+    }
+    var offered = false;
+    var list = sections && sections[course] ? sections[course] : [];
+    for (var s = 0; s < list.length; s++) {
+      if (Number(list[s].period) === Number(period)) offered = true;
+    }
+    if (!offered) {
+      var seenTeachers = {};
+      for (var t = 0; t < list.length; t++) {
+        var teacher = list[t].teacher;
+        if (seenTeachers[teacher]) continue;
+        seenTeachers[teacher] = true;
+        var busy = findTeacherSection(sections, teacher, period);
+        if (busy && busy.course !== course) {
+          return teacher + " already teaches " + busy.course + " this period";
+        }
+      }
+      return "Not offered in Period " + period;
+    }
+    if (savedSchedule && savedSchedule[period] && savedSchedule[period].course === course) return "";
+    if (openSeatsInPeriod(sections, course, period) <= 0) return "No seats left";
+    return "";
+  }
+
+  function periodOptions(period, student, proposed, sections, savedSchedule) {
+    var courses = allScheduleOptions();
+    var list = [];
+    for (var i = 0; i < courses.length; i++) {
+      var reason = periodBlockReason(courses[i], period, student, proposed, sections, savedSchedule);
+      list.push({ course: courses[i], enabled: !reason, reason: reason });
+    }
+    return list;
+  }
+
+  function cloneResultForTrial(result) {
+    return {
+      student: result.student,
+      schedule: copySchedule(result.schedule),
+      notes: (result.notes || []).slice(),
+      reasons: (result.reasons || []).slice(),
+      receivedElectives: [],
+      missedElectives: [],
+      manual: !!result.manual,
+      complete: result.complete !== false,
+      status: result.status || "scheduled",
+      flaggedForAdmin: !!result.flaggedForAdmin
+    };
+  }
+
+  function replacedSchedule(schedule, period, course) {
+    var copy = copySchedule(schedule);
+    copy[period] = course ? { course: course, teacher: "", sectionId: "" } : null;
+    return copy;
+  }
+
+  function canPlaceCourse(result, sections, period, course) {
+    var schedule = result.schedule || {};
+    if (schedule[period] && schedule[period].course === course) return false;
+    for (var p = 1; p <= 7; p++) {
+      if (p === Number(period)) continue;
+      if (schedule[p] && subjectFamily(schedule[p].course) === subjectFamily(course)) return false;
+    }
+    var occupant = schedule[period];
+    if (occupant && !requiredPreserved(result.student, schedule, replacedSchedule(schedule, period, course))) return false;
+    var draft = cloneSections(sections);
+    if (occupant) releaseSeat(draft, occupant);
+    return openSeatsInPeriod(draft, course, period) > 0;
+  }
+
+  function finishAppliedSchedule(result, schedule) {
+    var reasons = collectReasons(result.student, schedule);
+    if (result.flaggedForAdmin) {
+      var flagNote = "Flagged for an admin to review.";
+      if (reasons.indexOf(flagNote) === -1) reasons.push(flagNote);
+    }
+    result.schedule = schedule;
+    result.complete = reasons.length === 0;
+    result.status = result.complete ? "scheduled" : "partial";
+    result.notes = reasons;
+    result.reasons = reasons.slice();
+    result.manual = true;
+    syncElectiveLists(result);
+  }
+
+  function applySuggestion(result, sections, suggestion) {
+    if (!result || !result.schedule || !suggestion) return { ok: false, error: "No fix to apply." };
+    if (suggestion.kind === "flag") {
+      var draft = cloneSections(sections);
+      var schedule = copySchedule(result.schedule);
+      var clearPeriods = suggestion.clearPeriods || [];
+      for (var i = 0; i < clearPeriods.length; i++) {
+        var period = clearPeriods[i];
+        if (!schedule[period]) continue;
+        if (!requiredPreserved(result.student, schedule, replacedSchedule(schedule, period, null))) {
+          return { ok: false, error: "Clearing that period would drop a required class." };
+        }
+      }
+      for (var c = 0; c < clearPeriods.length; c++) {
+        if (schedule[clearPeriods[c]]) releaseSeat(draft, schedule[clearPeriods[c]]);
+        schedule[clearPeriods[c]] = null;
+      }
+      if (!familiesUnique(schedule) || !seatsInBounds(draft)) {
+        return { ok: false, error: "That would break the schedule." };
+      }
+      commitSeats(sections, draft);
+      result.flaggedForAdmin = true;
+      finishAppliedSchedule(result, schedule);
+      return { ok: true };
+    }
+
+    var draftSections = cloneSections(sections);
+    var next = copySchedule(result.schedule);
+    if (suggestion.kind === "place") {
+      var occupant = next[suggestion.period];
+      if (occupant) releaseSeat(draftSections, occupant);
+      var taken = takeSeat(draftSections, suggestion.course, suggestion.period);
+      if (!taken) return { ok: false, error: "That seat is gone." };
+      next[suggestion.period] = taken;
+    } else if (suggestion.kind === "swap") {
+      var left = next[suggestion.period];
+      var right = next[suggestion.otherPeriod];
+      if (!left || !right) return { ok: false, error: "Nothing to swap." };
+      releaseSeat(draftSections, left);
+      releaseSeat(draftSections, right);
+      var movedRight = takeSeat(draftSections, right.course, suggestion.period);
+      var movedLeft = takeSeat(draftSections, left.course, suggestion.otherPeriod);
+      if (!movedRight || !movedLeft) return { ok: false, error: "Those classes cannot swap." };
+      next[suggestion.period] = movedRight;
+      next[suggestion.otherPeriod] = movedLeft;
+    } else {
+      return { ok: false, error: "Unknown fix." };
+    }
+    if (!familiesUnique(next)) return { ok: false, error: "That would repeat a subject." };
+    if (!requiredPreserved(result.student, result.schedule, next)) {
+      return { ok: false, error: "That would drop a required class." };
+    }
+    if (!seatsInBounds(draftSections)) return { ok: false, error: "That would overfill a class." };
+    commitSeats(sections, draftSections);
+    finishAppliedSchedule(result, next);
+    return { ok: true };
+  }
+
+  function proposalNeedsFixes(result, proposal, sections) {
+    if (!proposal) return result.complete === false;
+    for (var period = 1; period <= 7; period++) {
+      var wanted = proposal[period] || "";
+      var current = result.schedule[period] ? result.schedule[period].course : "";
+      if (wanted === current) continue;
+      if (!wanted) return true;
+      if (periodBlockReason(wanted, period, result.student, proposal, sections, result.schedule)) return true;
+    }
+    return result.complete === false;
+  }
+
+  function suggestFixes(result, sections, proposal) {
+    if (!result || !result.student || !result.schedule || !sections) return [];
+    if (proposal && !proposalNeedsFixes(result, proposal, sections)) return [];
+    if (!proposal && result.complete !== false) return [];
+
+    var ideas = [];
+    function add(suggestion) {
+      if (ideas.length >= 3) return;
+      for (var i = 0; i < ideas.length; i++) {
+        if (ideas[i].id === suggestion.id || ideas[i].label === suggestion.label) return;
+      }
+      var trial = cloneResultForTrial(result);
+      var draft = cloneSections(sections);
+      var outcome = applySuggestion(trial, draft, suggestion);
+      if (!outcome.ok) return;
+      if (!familiesUnique(trial.schedule) || !seatsInBounds(draft)) return;
+      if (suggestion.kind !== "flag" && !requiredPreserved(result.student, result.schedule, trial.schedule)) return;
+      ideas.push({
+        id: suggestion.id,
+        kind: suggestion.kind,
+        label: suggestion.label,
+        period: suggestion.period,
+        otherPeriod: suggestion.otherPeriod,
+        course: suggestion.course,
+        clearPeriods: suggestion.clearPeriods
+      });
+    }
+
+    var rankings = result.student.rankings || [];
+    for (var r = 0; r < rankings.length; r++) {
+      var wanted = rankings[r];
+      if (!wanted || scheduleHasCourse(result.schedule, wanted)) continue;
+      for (var period = 1; period <= 7; period++) {
+        if (!canPlaceCourse(result, sections, period, wanted)) continue;
+        add({
+          kind: "place",
+          id: "choice-" + (r + 1) + "-" + period,
+          period: period,
+          course: wanted,
+          label: "Give their #" + (r + 1) + " choice, " + wanted + ", instead"
+        });
+        break;
+      }
+    }
+
+    var missing = requiredCoursesForGrade(result.student);
+    for (var m = 0; m < missing.length; m++) {
+      if (scheduleHasFamily(result.schedule, subjectFamily(missing[m]))) continue;
+      for (var mp = 1; mp <= 7; mp++) {
+        if (!canPlaceCourse(result, sections, mp, missing[m])) continue;
+        add({
+          kind: "place",
+          id: "required-" + missing[m] + "-" + mp,
+          period: mp,
+          course: missing[m],
+          label: "Move to " + missing[m] + " in Period " + mp + " (seats open)"
+        });
+      }
+    }
+
+    var backups = backupCourseList();
+    for (var ep = 1; ep <= 7; ep++) {
+      if (result.schedule[ep]) continue;
+      for (var bi = 0; bi < backups.length; bi++) {
+        if (!canPlaceCourse(result, sections, ep, backups[bi])) continue;
+        add({
+          kind: "place",
+          id: "fill-" + ep + "-" + backups[bi],
+          period: ep,
+          course: backups[bi],
+          label: "Put " + backups[bi] + " in Period " + ep + " (seats open)"
+        });
+      }
+    }
+
+    if (proposal) {
+      for (var pp = 1; pp <= 7; pp++) {
+        var asked = proposal[pp];
+        if (!asked) continue;
+        if (!periodBlockReason(asked, pp, result.student, proposal, sections, result.schedule)) continue;
+        for (var qq = 1; qq <= 7; qq++) {
+          if (qq === pp) continue;
+          if (!canPlaceCourse(result, sections, qq, asked)) continue;
+          add({
+            kind: "place",
+            id: "move-" + asked + "-" + qq,
+            period: qq,
+            course: asked,
+            label: "Move to " + asked + " in Period " + qq + " (seats open)"
+          });
+        }
+      }
+      var holes = [];
+      for (var hole = 1; hole <= 7; hole++) {
+        if (!proposal[hole] && result.schedule[hole]) holes.push(hole);
+      }
+      for (var h = 0; h < holes.length; h++) {
+        for (var b = 0; b < backups.length; b++) {
+          if (!canPlaceCourse(result, sections, holes[h], backups[b])) continue;
+          add({
+            kind: "place",
+            id: "fill-" + holes[h] + "-" + backups[b],
+            period: holes[h],
+            course: backups[b],
+            label: "Put " + backups[b] + " in Period " + holes[h] + " (seats open)"
+          });
+        }
+      }
+    }
+
+    for (var a = 1; a <= 7; a++) {
+      for (var b = a + 1; b <= 7; b++) {
+        if (!result.schedule[a] || !result.schedule[b]) continue;
+        var protectedA = requiredFamilies(result.student).indexOf(subjectFamily(result.schedule[a].course)) !== -1;
+        var protectedB = requiredFamilies(result.student).indexOf(subjectFamily(result.schedule[b].course)) !== -1;
+        if (protectedA && protectedB) continue;
+        add({
+          kind: "swap",
+          id: "swap-" + a + "-" + b,
+          period: a,
+          otherPeriod: b,
+          label: "Swap Period " + a + " and Period " + b
+        });
+        a = 8;
+        break;
+      }
+    }
+
+    var flag = null;
+    var clearPeriods = [];
+    if (proposal) {
+      for (var c = 1; c <= 7; c++) {
+        if (!proposal[c] && result.schedule[c]) clearPeriods.push(c);
+      }
+    }
+    var flagSuggestion = {
+      kind: "flag",
+      id: "flag-admin",
+      label: "Keep as partial and flag for admin",
+      clearPeriods: clearPeriods
+    };
+    if (!result.flaggedForAdmin) {
+      var trial = cloneResultForTrial(result);
+      var draft = cloneSections(sections);
+      if (applySuggestion(trial, draft, flagSuggestion).ok && familiesUnique(trial.schedule) && seatsInBounds(draft)) {
+        flag = {
+          id: "flag-admin",
+          kind: "flag",
+          label: "Keep as partial and flag for admin",
+          clearPeriods: clearPeriods.slice()
+        };
+      }
+    }
+
+    var list = ideas.slice(0, flag ? 3 : 4);
+    if (flag) list.push(flag);
+    if (list.length > 4) list = list.slice(0, 4);
+    return list;
+  }
+
   function allScheduleOptions() {
     var options = [];
     var grades = [6, 7, 8];
@@ -1578,7 +1995,8 @@
 
     var titleExtra = (student.peWaiver ? " | PE Waiver Recorded" : "") +
       (result.manual ? " | Manually Edited" : "") +
-      (result.complete === false ? " | Partial Schedule" : "");
+      (result.complete === false ? " | Partial Schedule" : "") +
+      (result.flaggedForAdmin ? " | Flagged for admin" : "");
 
     return '<div class="schedule-card">' +
       '<div class="schedule-title">' + escapeHtml(student.name) + " | Rising Grade " + escapeHtml(student.grade) + titleExtra + "</div>" +
@@ -1589,7 +2007,20 @@
       '<p class="small"><strong>Requested Courses Received:</strong> ' + received +
       "<br><strong>Requested Courses Not Placed:</strong> " + missed + "</p>" +
       manual +
+      fixHtml(result) +
       "</div></div>";
+  }
+
+  function fixHtml(result) {
+    var suggestions = result.suggestions || [];
+    if (!suggestions.length) return "";
+    var html = "<div class='note'><strong>Try a fix:</strong><br>";
+    for (var i = 0; i < suggestions.length; i++) {
+      html += "<button type='button' class='secondary fix-suggestion' data-result-index='" +
+        escapeHtml(result._index) + "' data-fix-id='" + escapeHtml(suggestions[i].id) + "'>" +
+        escapeHtml(suggestions[i].label) + "</button>";
+    }
+    return html + "</div>";
   }
 
   function createSummaryHtml(results, modeName, warnings) {
@@ -1651,6 +2082,11 @@
     isCompetitionCourse: isCompetitionCourse,
     requiredCoursesForGrade: requiredCoursesForGrade,
     getLunchAfterPeriod: getLunchAfterPeriod,
-    classifyCourse: classifyCourse
+    classifyCourse: classifyCourse,
+    choiceBlockReason: choiceBlockReason,
+    periodBlockReason: periodBlockReason,
+    periodOptions: periodOptions,
+    suggestFixes: suggestFixes,
+    applySuggestion: applySuggestion
   };
 });
